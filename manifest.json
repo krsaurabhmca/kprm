@@ -1,0 +1,15 @@
+{
+  "name": "Open Programing Extension",
+  "short_name": "OPeX",
+  "start_url": "index.php",
+  "id": "system/op_dashboard.php",
+  "display": "standalone",
+  "theme_color": "#384350",
+  "background_color":"#f5f7fb",
+  "icons": [
+    {
+      "src": "system/img/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }]
+}

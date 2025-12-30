@@ -1,0 +1,208 @@
+# KPRM - Git Ignore File
+
+# ============================================
+# PHP & Composer
+# ============================================
+/vendor/
+composer.phar
+composer.lock
+*.phar
+
+# ============================================
+# Configuration Files (Sensitive Data)
+# ============================================
+system/op_config.php
+*.env
+.env
+.env.local
+.env.*.local
+config.local.php
+*_local.php
+
+# ============================================
+# Upload Directories
+# ============================================
+upload/
+uploads/
+public/upload/
+public/uploads/
+**/upload/**
+**/uploads/**
+
+# ============================================
+# Logs & Error Logs
+# ============================================
+*.log
+logs/
+log/
+error_log
+error.log
+php_errors.log
+*.log.*
+
+# ============================================
+# Cache & Temporary Files
+# ============================================
+cache/
+tmp/
+temp/
+*.tmp
+*.cache
+*.swp
+*.swo
+*~
+
+# ============================================
+# IDE & Editor Files
+# ============================================
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# PhpStorm / IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# NetBeans
+nbproject/
+build/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+# Eclipse
+.project
+.classpath
+.settings/
+build/
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ============================================
+# OS Files
+# ============================================
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ============================================
+# Database Files
+# ============================================
+*.sql
+*.sql.gz
+*.sql.bz2
+*.dump
+*.db
+*.sqlite
+*.sqlite3
+db_backup/
+backup/
+backups/
+*.bak
+
+# ============================================
+# XAMPP Specific
+# ============================================
+xampp/
+htdocs/.htaccess.local
+
+# ============================================
+# Session & Temporary PHP Files
+# ============================================
+sessions/
+session/
+*.sess
+*.session
+
+# ============================================
+# Node.js (if used)
+# ============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# ============================================
+# Build & Distribution
+# ============================================
+build/
+dist/
+*.zip
+*.tar
+*.tar.gz
+*.rar
+
+# ============================================
+# Testing
+# ============================================
+.phpunit.result.cache
+phpunit.xml
+tests/_output/
+coverage/
+.phpunit.cache
+
+# ============================================
+# Documentation (if auto-generated)
+# ============================================
+docs/_build/
+docs/.doctrees/
+
+# ============================================
+# Miscellaneous
+# ============================================
+*.orig
+*.rej
+*.patch
+*.diff
+*.bak
+*.backup
+*.old
+*.save
+
+# Keep upload directory structure but ignore files
+!upload/.gitkeep
+!uploads/.gitkeep
+!public/upload/.gitkeep
+!public/uploads/.gitkeep

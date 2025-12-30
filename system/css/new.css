@@ -1,0 +1,424 @@
+/* Modern Admin Panel CSS Override */
+/* Import Google Fonts for better typography */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* CSS Variables for consistent theming */
+:root {
+  --primary-color: #6366f1;
+  --primary-hover: #5856eb;
+  --secondary-color: #f1f5f9;
+  --accent-color: #10b981;
+  --danger-color: #ef4444;
+  --warning-color: #f59e0b;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-card: #ffffff;
+  --border-color: #e2e8f0;
+  --border-radius: 12px;
+  --box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --box-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Dark mode variables */
+[data-theme="dark"] {
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-card: #334155;
+  --border-color: #475569;
+}
+
+/* Global Reset and Base Styles */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+  line-height: 1.6;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Sidebar Modernization */
+.sidebar,
+.sidebar-sticky,
+.sidebar-nav {
+  background: var(--bg-card) !important;
+  border-right: 1px solid var(--border-color) !important;
+  box-shadow: var(--box-shadow) !important;
+}
+
+.sidebar-brand {
+  padding: 1.5rem 1rem !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-hover)) !important;
+  margin-bottom: 0 !important;
+}
+
+.sidebar-brand-text {
+  color: white !important;
+  font-weight: 700 !important;
+  font-size: 1.25rem !important;
+  letter-spacing: -0.025em;
+}
+
+.sidebar-nav .nav-link {
+  color: var(--text-secondary) !important;
+  padding: 0.75rem 1rem !important;
+  margin: 0.25rem 0.75rem !important;
+  border-radius: var(--border-radius) !important;
+  transition: var(--transition) !important;
+  font-weight: 500 !important;
+}
+
+.sidebar-nav .nav-link:hover,
+.sidebar-nav .nav-link.active {
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-hover)) !important;
+  color: white !important;
+  transform: translateX(4px);
+  box-shadow: var(--box-shadow) !important;
+}
+
+.sidebar-nav .nav-link i {
+  margin-right: 0.75rem !important;
+  width: 20px !important;
+  text-align: center !important;
+}
+
+/* Header/Navbar Improvements */
+.navbar {
+  background: var(--bg-card) !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  box-shadow: var(--box-shadow) !important;
+  padding: 1rem 1.5rem !important;
+}
+
+.navbar-brand {
+  font-weight: 700 !important;
+  color: var(--text-primary) !important;
+}
+
+.navbar-nav .nav-link {
+  color: var(--text-secondary) !important;
+  font-weight: 500 !important;
+  transition: var(--transition) !important;
+}
+
+.navbar-nav .nav-link:hover {
+  color: var(--primary-color) !important;
+}
+
+/* Main Content Area */
+.main {
+  background: var(--bg-secondary) !important;
+}
+
+.container-fluid {
+  padding: 2rem !important;
+}
+
+/* Card Modernization */
+.card {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--border-radius) !important;
+  box-shadow: var(--box-shadow) !important;
+  margin-bottom: 1.5rem !important;
+  transition: var(--transition) !important;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--box-shadow-lg) !important;
+}
+
+.card-header {
+  background: transparent !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  padding: 1.5rem !important;
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+}
+
+.card-body {
+  padding: 1.5rem !important;
+}
+
+/* Statistics Cards */
+.card-title {
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  color: var(--text-secondary) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.display-4,
+.display-5,
+.display-6 {
+  font-weight: 700 !important;
+  color: var(--text-primary) !important;
+  margin-bottom: 0.5rem !important;
+}
+
+/* Metric Cards Enhancement */
+.card.stat-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.card.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(180deg, var(--primary-color), var(--primary-hover));
+}
+
+/* Progress Indicators */
+.text-success {
+  color: var(--accent-color) !important;
+  font-weight: 600 !important;
+}
+
+.text-danger {
+  color: var(--danger-color) !important;
+  font-weight: 600 !important;
+}
+
+.text-warning {
+  color: var(--warning-color) !important;
+  font-weight: 600 !important;
+}
+
+.text-muted {
+  color: var(--text-muted) !important;
+}
+
+/* Tables Enhancement */
+.table {
+  background: var(--bg-card) !important;
+  border-radius: var(--border-radius) !important;
+  overflow: hidden !important;
+  box-shadow: var(--box-shadow) !important;
+}
+
+.table thead th {
+  background: var(--bg-secondary) !important;
+  border-bottom: 2px solid var(--border-color) !important;
+  color: var(--text-primary) !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  font-size: 0.75rem !important;
+  letter-spacing: 0.05em !important;
+  padding: 1rem !important;
+}
+
+.table tbody tr {
+  transition: var(--transition) !important;
+}
+
+.table tbody tr:hover {
+  background: var(--bg-secondary) !important;
+  transform: scale(1.01);
+}
+
+.table tbody td {
+  padding: 1rem !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Badges and Status Indicators */
+.badge {
+  font-weight: 500 !important;
+  padding: 0.5rem 0.75rem !important;
+  border-radius: 6px !important;
+  font-size: 0.75rem !important;
+}
+
+.badge-success {
+  background: var(--accent-color) !important;
+  color: white !important;
+}
+
+.badge-warning {
+  background: var(--warning-color) !important;
+  color: white !important;
+}
+
+.badge-danger {
+  background: var(--danger-color) !important;
+  color: white !important;
+}
+
+.badge-secondary {
+  background: var(--text-muted) !important;
+  color: white !important;
+}
+
+/* Buttons Enhancement */
+.btn {
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+  transition: var(--transition) !important;
+  text-transform: none !important;
+  font-size: 0.875rem !important;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-hover)) !important;
+  border: none !important;
+  box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.3) !important;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 15px -3px rgba(99, 102, 241, 0.4) !important;
+}
+
+.btn-outline-primary {
+  border: 2px solid var(--primary-color) !important;
+  color: var(--primary-color) !important;
+}
+
+.btn-outline-primary:hover {
+  background: var(--primary-color) !important;
+  transform: translateY(-1px);
+}
+
+/* Charts and Graphs */
+.chart-container {
+  background: var(--bg-card) !important;
+  border-radius: var(--border-radius) !important;
+  padding: 1.5rem !important;
+  box-shadow: var(--box-shadow) !important;
+}
+
+/* Form Controls */
+.form-control {
+  border: 2px solid var(--border-color) !important;
+  border-radius: 8px !important;
+  padding: 0.75rem 1rem !important;
+  transition: var(--transition) !important;
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+
+.form-control:focus {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1) !important;
+}
+
+/* Dropdowns */
+.dropdown-menu {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--border-radius) !important;
+  box-shadow: var(--box-shadow-lg) !important;
+}
+
+.dropdown-item {
+  color: var(--text-primary) !important;
+  transition: var(--transition) !important;
+}
+
+.dropdown-item:hover {
+  background: var(--bg-secondary) !important;
+  color: var(--primary-color) !important;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  .container-fluid {
+    padding: 1rem !important;
+  }
+  
+  .card {
+    margin-bottom: 1rem !important;
+  }
+  
+  .sidebar-nav .nav-link {
+    margin: 0.125rem 0.5rem !important;
+  }
+}
+
+/* Loading and Animation States */
+.loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Additional Utility Classes */
+.glass-effect {
+  background: rgba(255, 255, 255, 0.25) !important;
+  backdrop-filter: blur(10px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.pulse {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
