@@ -80,338 +80,181 @@ if ($attachments_res && mysqli_num_rows($attachments_res) > 0) {
 // Get current review status and remarks
 $review_status = $task_data_json['review_status'] ?? '';
 $review_remarks = $task_data_json['review_remarks'] ?? '';
-
-// Display messages
-if (isset($_SESSION['success_message'])) {
-    echo '<div class="alert alert-success alert-dismissible fade show" role="alert">';
-    echo '<i class="fas fa-check-circle"></i> ' . $_SESSION['success_message'];
-    echo '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
-    echo '</div>';
-    unset($_SESSION['success_message']);
-}
-if (isset($_SESSION['error_message'])) {
-    echo '<div class="alert alert-danger alert-dismissible fade show" role="alert">';
-    echo '<i class="fas fa-exclamation-circle"></i> ' . $_SESSION['error_message'];
-    echo '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
-    echo '</div>';
-    unset($_SESSION['error_message']);
-}
 ?>
 
-<div class="container-fluid">
-    <!-- Progress Indicator -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card border-primary">
-                <div class="card-body">
-                    <h5 class="card-title mb-3">
-                        <i class="fas fa-tasks text-primary"></i> Task Review Workflow
-                    </h5>
-                    <div class="row">
-                        <div class="col-md-3 text-center">
-                            <div class="p-3 rounded bg-light">
-                                <i class="fas fa-clock fa-2x mb-2 text-muted"></i>
-                                <p class="mb-0"><strong>1. Pending</strong></p>
-                                <small class="text-muted">Task Created</small>
-                            </div>
-                        </div>
-                        <div class="col-md-3 text-center">
-                            <div class="p-3 rounded bg-light">
-                                <i class="fas fa-user-check fa-2x mb-2 text-muted"></i>
-                                <p class="mb-0"><strong>2. In Progress</strong></p>
-                                <small class="text-muted">Verification</small>
-                            </div>
-                        </div>
-                        <div class="col-md-3 text-center">
-                            <div class="p-3 rounded bg-primary text-white">
-                                <i class="fas fa-check-circle fa-2x mb-2"></i>
-                                <p class="mb-0"><strong>3. Verified</strong></p>
-                                <small>Ready for Review</small>
-                            </div>
-                        </div>
-                        <div class="col-md-3 text-center">
-                            <div class="p-3 rounded <?php echo $current_status == 'COMPLETED' ? 'bg-success text-white' : 'bg-light'; ?>">
-                                <i class="fas fa-clipboard-check fa-2x mb-2 <?php echo $current_status == 'COMPLETED' ? '' : 'text-muted'; ?>"></i>
-                                <p class="mb-0"><strong>4. Completed</strong></p>
-                                <small <?php echo $current_status == 'COMPLETED' ? '' : 'class="text-muted"'; ?>>Review Done</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+<main class="content">
+    <div class="container-fluid py-3">
+        <!-- Page Header -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h4 class="mb-0">
+                    <i class="fas fa-clipboard-check text-warning me-2"></i>
+                    <strong>Task Review: <?php echo htmlspecialchars($task_name); ?></strong>
+                </h4>
+                <small class="text-muted">Case: <?php echo htmlspecialchars($case_data['application_no'] ?? 'N/A'); ?></small>
             </div>
+            <a href="view_case.php?case_id=<?php echo $case_id; ?>" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Back
+            </a>
         </div>
-    </div>
 
-    <div class="row">
-        <div class="col-12">
-            <div class="card shadow-sm">
-                <div class="card-header bg-warning d-flex justify-content-between align-items-center">
-                    <h4 class="card-title mb-0 text-dark">
-                        <i class="fas fa-clipboard-check "></i> Task Review: <?php echo htmlspecialchars($task_name); ?>
-                    </h4>
-                    <div class="card-tools">
-                        <a href="view_case.php?case_id=<?php echo $case_id; ?>" class="btn btn-light btn-sm">
-                            <i class="fas fa-arrow-left"></i> Back to Case
-                        </a>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <!-- Task Info Card -->
-                    <div class="card border-primary mb-4">
-                        <div class="card-header bg-light">
-                            <h5 class="mb-0">
-                                <i class="fas fa-info-circle text-primary"></i> Task Information
-                            </h5>
+        <!-- Display Messages -->
+        <?php if (isset($_SESSION['success_message'])): ?>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="fas fa-check-circle me-2"></i><?php echo $_SESSION['success_message']; ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            <?php unset($_SESSION['success_message']); ?>
+        <?php endif; ?>
+        <?php if (isset($_SESSION['error_message'])): ?>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="fas fa-exclamation-circle me-2"></i><?php echo $_SESSION['error_message']; ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            <?php unset($_SESSION['error_message']); ?>
+        <?php endif; ?>
+
+        <div class="row">
+            <!-- Left Column: Review Information -->
+            <div class="col-lg-7 mb-3">
+                <!-- Verifier Remarks -->
+                <?php if (!empty($verifier_remarks)): ?>
+                    <div class="card shadow-sm mb-3">
+                        <div class="card-header bg-light py-2">
+                            <h6 class="mb-0 fw-bold">
+                                <i class="fas fa-comment-alt text-success me-2"></i>Verifier Remarks
+                            </h6>
                         </div>
                         <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-3">
-                                    <p class="mb-2">
-                                        <i class="fas fa-folder text-muted"></i> 
-                                        <strong>Case ID:</strong> 
-                                        <span class="badge bg-secondary"><?php echo $case_id; ?></span>
-                                    </p>
-                                </div>
-                                <div class="col-md-3">
-                                    <p class="mb-2">
-                                        <i class="fas fa-file-alt text-muted"></i> 
-                                        <strong>Application No:</strong> 
-                                        <span><?php echo htmlspecialchars($case_data['application_no'] ?? 'N/A'); ?></span>
-                                    </p>
-                                </div>
-                                <div class="col-md-3">
-                                    <p class="mb-2">
-                                        <i class="fas fa-tasks text-muted"></i> 
-                                        <strong>Task Name:</strong> 
-                                        <span><?php echo htmlspecialchars($task_name); ?></span>
-                                    </p>
-                                </div>
-                                <div class="col-md-3">
-                                    <p class="mb-2">
-                                        <i class="fas fa-flag text-muted"></i> 
-                                        <strong>Status:</strong> 
-                                        <span class="badge bg-<?php 
-                                            $status = $case_task_data['task_status'] ?? 'PENDING';
-                                            echo $status == 'COMPLETED' ? 'success' : ($status == 'VERIFICATION_COMPLETED' ? 'primary' : ($status == 'IN_PROGRESS' ? 'info' : 'warning'));
-                                        ?>">
-                                            <?php echo htmlspecialchars($status); ?>
-                                        </span>
-                                    </p>
-                                </div>
-                            </div>
+                            <p class="mb-0"><?php echo nl2br(htmlspecialchars($verifier_remarks)); ?></p>
                         </div>
                     </div>
+                <?php endif; ?>
 
-                    <!-- Task Fields Card -->
-                    <div class="card border-info mb-4">
-                        <div class="card-header bg-light">
-                            <h5 class="mb-0">
-                                <i class="fas fa-list text-info"></i> Task Data Fields
-                            </h5>
-                        </div>
-                        <div class="card-body">
-                            <?php
-                            $task_meta_fields = get_all('tasks_meta', '*', ['task_id' => $task_template_id, 'status' => 'ACTIVE'], 'id ASC');
-                            if ($task_meta_fields['count'] > 0):
-                            ?>
-                                <div class="row">
-                                    <?php foreach ($task_meta_fields['data'] as $field): ?>
-                                        <?php
-                                        $field_value = isset($task_data_json[$field['field_name']]) ? $task_data_json[$field['field_name']] : '';
-                                        if (!empty($field_value)):
-                                        ?>
-                                            <div class="col-md-4 mb-3">
-                                                <label class="form-label text-muted">
-                                                    <small><?php echo htmlspecialchars($field['display_name']); ?></small>
-                                                </label>
-                                                <div class="form-control-plaintext bg-light p-3 rounded border">
-                                                    <strong><?php echo htmlspecialchars($field_value); ?></strong>
-                                                </div>
-                                            </div>
-                                        <?php endif; ?>
-                                    <?php endforeach; ?>
-                                </div>
-                            <?php else: ?>
-                                <div class="alert alert-info">
-                                    <i class="fas fa-info-circle"></i> No task fields configured.
-                                </div>
-                            <?php endif; ?>
-                        </div>
+                <!-- Review Form -->
+                <div class="card shadow-sm">
+                    <div class="card-header bg-warning text-dark py-2">
+                        <h6 class="mb-0 fw-bold">
+                            <i class="fas fa-clipboard-check me-2"></i>Review & Complete
+                        </h6>
                     </div>
-
-                    <!-- Verifier Remarks Card -->
-                    <?php if (!empty($verifier_remarks)): ?>
-                        <div class="card border-success mb-4">
-                            <div class="card-header bg-success text-white">
-                                <h5 class="mb-0">
-                                    <i class="fas fa-comment-alt"></i> Verifier Remarks & Findings
-                                </h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="alert alert-light border">
-                                    <p class="mb-0"><?php echo nl2br(htmlspecialchars($verifier_remarks)); ?></p>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-
-                    <!-- Attachments Card -->
-                    <?php if (!empty($attachments)): ?>
-                        <div class="card border-info mb-4">
-                            <div class="card-header bg-light">
-                                <h5 class="mb-0">
-                                    <i class="fas fa-paperclip text-info"></i> Verifier Attachments
-                                    <span class="badge bg-info"><?php echo count($attachments); ?> file(s)</span>
-                                </h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="alert alert-info mb-3">
-                                    <i class="fas fa-info-circle"></i> 
-                                    <strong>Select attachments</strong> that should be included in the final report by checking the boxes below.
-                                </div>
-                                <div class="table-responsive">
-                                    <table class="table table-hover">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th width="50">
-                                                    <input type="checkbox" id="selectAllAttachments" title="Select All" class="form-check-input">
-                                                </th>
-                                                <th><i class="fas fa-file"></i> File Name</th>
-                                                <th><i class="fas fa-tag"></i> Type</th>
-                                                <th><i class="fas fa-calendar"></i> Uploaded On</th>
-                                                <th><i class="fas fa-check-circle"></i> In Report</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php foreach ($attachments as $attachment): ?>
-                                                <tr class="<?php echo ($attachment['display_in_report'] ?? 'NO') == 'YES' ? 'table-success' : ''; ?>">
-                                                    <td>
-                                                        <input type="checkbox" class="attachment-checkbox form-check-input" name="attachment_ids[]" value="<?php echo $attachment['id']; ?>" 
-                                                            <?php echo ($attachment['display_in_report'] ?? 'NO') == 'YES' ? 'checked' : ''; ?>>
-                                                    </td>
-                                                    <td>
-                                                        <i class="fas fa-file text-primary"></i> 
-                                                        <strong><?php echo htmlspecialchars($attachment['file_name']); ?></strong>
-                                                    </td>
-                                                    <td>
-                                                        <span class="badge bg-secondary"><?php echo htmlspecialchars($attachment['file_type'] ?? 'Unknown'); ?></span>
-                                                    </td>
-                                                    <td>
-                                                        <small><?php echo $attachment['created_at'] ? date('d M Y, h:i A', strtotime($attachment['created_at'])) : 'N/A'; ?></small>
-                                                    </td>
-                                                    <td>
-                                                        <?php if (($attachment['display_in_report'] ?? 'NO') == 'YES'): ?>
-                                                            <span class="badge bg-success">
-                                                                <i class="fas fa-check"></i> YES
-                                                            </span>
-                                                        <?php else: ?>
-                                                            <span class="badge bg-secondary">NO</span>
-                                                        <?php endif; ?>
-                                                    </td>
-                                                    <td>
-                                                        <button type="button" class="btn btn-sm btn-primary" onclick="previewFile('<?php echo htmlspecialchars($attachment['file_url']); ?>', '<?php echo htmlspecialchars($attachment['file_name']); ?>', '<?php echo htmlspecialchars($attachment['file_type'] ?? ''); ?>')" title="Preview File">
-                                                            <i class="fas fa-eye"></i> View
-                                                        </button>
-                                                        <a href="../upload/<?php echo htmlspecialchars($attachment['file_url']); ?>" target="_blank" class="btn btn-sm btn-success" download title="Download">
-                                                            <i class="fas fa-download"></i>
-                                                        </a>
-                                                    </td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-
-                    <!-- Review Form Card -->
-                    <div class="card border-warning">
-                        <div class="card-header bg-warning text-dark">
-                            <h5 class="mb-0">
-                                <i class="fas fa-clipboard-check"></i> Final Review & Report Generation
-                            </h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="alert alert-warning">
-                                <i class="fas fa-exclamation-triangle"></i> 
-                                <strong>Review Process:</strong> Select the review status to auto-generate the report. 
-                                You can edit the generated remarks before saving. Once saved, the task will be marked as completed.
-                            </div>
+                    <div class="card-body">
+                        <form id="reviewForm" method="POST" action="save_task_review.php">
+                            <input type="hidden" name="case_task_id" value="<?php echo $case_task_id; ?>">
+                            <input type="hidden" name="case_id" value="<?php echo $case_id; ?>">
+                            <input type="hidden" name="task_template_id" value="<?php echo $task_template_id; ?>">
                             
-                            <form id="reviewForm" method="POST" action="save_task_review.php">
-                                <input type="hidden" name="case_task_id" value="<?php echo $case_task_id; ?>">
-                                <input type="hidden" name="case_id" value="<?php echo $case_id; ?>">
-                                <input type="hidden" name="task_template_id" value="<?php echo $task_template_id; ?>">
-                                
-                                <div class="row mb-4">
-                                    <div class="col-md-6">
-                                        <label class="form-label">
-                                            <i class="fas fa-flag text-primary"></i> 
-                                            <strong>Review Status</strong> 
-                                            <span class="text-danger">*</span>
-                                        </label>
-                                        <select name="review_status" id="review_status" class="form-select form-select-lg" required onchange="generateRemarks()">
-                                            <option value="">-- Select Review Status --</option>
-                                            <option value="POSITIVE" <?php echo $review_status == 'POSITIVE' ? 'selected' : ''; ?>>
-                                                <?php echo htmlspecialchars($positive_status); ?>
-                                            </option>
-                                            <option value="NEGATIVE" <?php echo $review_status == 'NEGATIVE' ? 'selected' : ''; ?>>
-                                                <?php echo htmlspecialchars($negative_status); ?>
-                                            </option>
-                                            <option value="CNV" <?php echo $review_status == 'CNV' ? 'selected' : ''; ?>>
-                                                <?php echo htmlspecialchars($cnv_status); ?>
-                                            </option>
-                                        </select>
-                                        <small class="text-muted">
-                                            <i class="fas fa-lightbulb"></i> Select status to auto-generate report remarks from template.
-                                        </small>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Review Status <span class="text-danger">*</span></label>
+                                <select name="review_status" id="review_status" class="form-select" required onchange="generateRemarks()">
+                                    <option value="">-- Select Status --</option>
+                                    <option value="POSITIVE" <?php echo $review_status == 'POSITIVE' ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($positive_status); ?>
+                                    </option>
+                                    <option value="NEGATIVE" <?php echo $review_status == 'NEGATIVE' ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($negative_status); ?>
+                                    </option>
+                                    <option value="CNV" <?php echo $review_status == 'CNV' ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($cnv_status); ?>
+                                    </option>
+                                </select>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Review Remarks</label>
+                                <textarea name="review_remarks" id="review_remarks" class="form-control" rows="6" placeholder="Review remarks will be generated automatically based on selected status. You can edit as needed..."><?php echo htmlspecialchars($review_remarks); ?></textarea>
+                            </div>
+
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary" id="submitBtn">
+                                    <i class="fas fa-save me-1"></i>Save Review & Complete Task
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Attachments -->
+            <div class="col-lg-5 mb-3">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-light py-2">
+                        <h6 class="mb-0 fw-bold">
+                            <i class="fas fa-paperclip text-info me-2"></i>Attachments
+                            <?php if (!empty($attachments)): ?>
+                                <span class="badge bg-info ms-2"><?php echo count($attachments); ?></span>
+                            <?php endif; ?>
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <?php if (empty($attachments)): ?>
+                            <div class="text-center py-4">
+                                <i class="fas fa-folder-open fa-3x text-muted mb-2"></i>
+                                <p class="text-muted mb-0 small">No attachments</p>
+                            </div>
+                        <?php else: ?>
+                            <div class="mb-2">
+                                <label class="form-check-label">
+                                    <input type="checkbox" id="selectAllAttachments" class="form-check-input me-2">
+                                    <small>Select All</small>
+                                </label>
+                            </div>
+                            <div class="list-group">
+                                <?php foreach ($attachments as $attachment): ?>
+                                    <?php
+                                    $file_ext = strtolower(pathinfo($attachment['file_name'], PATHINFO_EXTENSION));
+                                    $icon_class = 'fa-file';
+                                    $icon_color = 'text-primary';
+                                    
+                                    if (in_array($file_ext, ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'])) {
+                                        $icon_class = 'fa-image';
+                                        $icon_color = 'text-success';
+                                    } elseif (in_array($file_ext, ['pdf'])) {
+                                        $icon_class = 'fa-file-pdf';
+                                        $icon_color = 'text-danger';
+                                    }
+                                    $is_selected = ($attachment['display_in_report'] ?? 'NO') == 'YES';
+                                    ?>
+                                    <div class="list-group-item <?php echo $is_selected ? 'border-success' : ''; ?>">
+                                        <div class="form-check mb-2">
+                                            <input type="checkbox" class="attachment-checkbox form-check-input" name="attachment_ids[]" value="<?php echo $attachment['id']; ?>" 
+                                                id="att_<?php echo $attachment['id']; ?>" <?php echo $is_selected ? 'checked' : ''; ?>>
+                                            <label class="form-check-label d-flex align-items-center w-100" for="att_<?php echo $attachment['id']; ?>">
+                                                <i class="fas <?php echo $icon_class; ?> <?php echo $icon_color; ?> me-2"></i>
+                                                <span class="flex-grow-1 text-truncate" title="<?php echo htmlspecialchars($attachment['file_name']); ?>">
+                                                    <?php echo htmlspecialchars($attachment['file_name']); ?>
+                                                </span>
+                                                <?php if ($is_selected): ?>
+                                                    <span class="badge bg-success ms-2"><i class="fas fa-check"></i></span>
+                                                <?php endif; ?>
+                                            </label>
+                                        </div>
+                                        <div class="d-flex gap-2">
+                                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewFile('<?php echo htmlspecialchars($attachment['file_url']); ?>', '<?php echo htmlspecialchars($attachment['file_name']); ?>', '<?php echo htmlspecialchars($attachment['file_type'] ?? ''); ?>')">
+                                                <i class="fas fa-eye me-1"></i>View
+                                            </button>
+                                            <a href="../upload/<?php echo htmlspecialchars($attachment['file_url']); ?>" target="_blank" class="btn btn-sm btn-outline-success" download>
+                                                <i class="fas fa-download me-1"></i>Download
+                                            </a>
+                                        </div>
                                     </div>
-                                </div>
-
-                                <div class="mb-4">
-                                    <label class="form-label">
-                                        <i class="fas fa-file-alt text-primary"></i> 
-                                        <strong>Final Report / Review Remarks</strong>
-                                    </label>
-                                    <textarea name="review_remarks" id="review_remarks" class="form-control" rows="6" placeholder="Review remarks will be generated automatically based on selected status. You can edit as needed..."><?php echo htmlspecialchars($review_remarks); ?></textarea>
-                                    <small class="text-muted">
-                                        <i class="fas fa-edit"></i> The report will be auto-generated when you select a status. You can edit it before saving.
-                                    </small>
-                                </div>
-
-                                <div class="d-flex gap-2">
-                                    <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
-                                        <i class="fas fa-save"></i> Save Review & Complete Task
-                                    </button>
-                                    <a href="view_case.php?case_id=<?php echo $case_id; ?>" class="btn btn-secondary btn-lg">
-                                        <i class="fas fa-times"></i> Cancel
-                                    </a>
-                                </div>
-                            </form>
-                        </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
+</main>
 
 <?php require_once('../system/footer.php'); ?>
 
 <script>
-// File Preview Function - Opens in resizable, movable window popup
+// File Preview Function
 function previewFile(fileUrl, fileName, fileType) {
     var previewUrl = 'file_preview.php?file=' + encodeURIComponent(fileUrl) + '&name=' + encodeURIComponent(fileName);
-    
-    // Open in a resizable, movable popup window
-    var popup = window.open(
-        previewUrl,
-        'filePreview',
-        'width=1200,height=800,resizable=yes,scrollbars=yes,toolbar=no,location=no,menubar=no,status=no'
-    );
-    
-    // Focus the popup window
+    var popup = window.open(previewUrl, 'filePreview', 'width=1200,height=800,resizable=yes,scrollbars=yes,toolbar=no,location=no,menubar=no,status=no');
     if (popup) {
         popup.focus();
     } else {
@@ -478,7 +321,7 @@ $(document).ready(function() {
             selectedAttachments.push($(this).val());
         });
         
-        submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
+        submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i>Saving...');
         
         var formData = $(this).serialize();
         formData += '&attachment_ids=' + selectedAttachments.join(',');
@@ -513,4 +356,3 @@ $(document).ready(function() {
     }
 });
 </script>
-

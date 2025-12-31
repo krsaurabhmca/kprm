@@ -36,6 +36,9 @@
                                     </h5>
                                 </div>
                                 <div class="card-body">
+                                <div class="alert alert-info">
+                                    <b>Instructions : </b> use Comma List in default value for multiple values for the field.
+                                </div>
                                     <?php $form  = create_form($table_name, $id, $isedit); 
 									$table_id = get_data("op_table", $table_name, "id","table_id")["data"];
                                     $res =  get_multi_data("op_role", array("table_id"=>$table_id, "role_name"=>$user_type));

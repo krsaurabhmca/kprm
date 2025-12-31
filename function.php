@@ -317,12 +317,16 @@ function build_client_meta_form($client_id, $existing_values = [])
         $label = htmlspecialchars($row['display_name']);
         $type  = strtoupper($row['input_type']);
         
-        // Use existing value if available, otherwise use default
+        // Use existing value if available, otherwise use default (but not for SELECT with comma-separated lists)
         $value = '';
         if (isset($existing_values[$row['field_name']]) && !empty($existing_values[$row['field_name']])) {
             $value = htmlspecialchars($existing_values[$row['field_name']]);
-        } elseif (!empty($row['default_value'])) {
+        } elseif (!empty($row['default_value']) && strtoupper($type) !== 'SELECT') {
+            // For non-SELECT fields, use default_value as default
             $value = htmlspecialchars($row['default_value']);
+        } elseif (!empty($row['default_value']) && strtoupper($type) === 'SELECT' && strpos($row['default_value'], ',') === false) {
+            // For SELECT fields, only use default_value if it's a single value (not comma-separated)
+            $value = htmlspecialchars(trim($row['default_value']));
         }
         
         $required = ($row['is_unique'] == 'YES') ? 'required' : '';
@@ -344,12 +348,38 @@ function build_client_meta_form($client_id, $existing_values = [])
                 break;
 
             case 'SELECT':
-                $html .= "<select name='client_meta[{$name}]' class='form-control' {$required}>";
+                $html .= "<select name='client_meta[{$name}]' class='form-select' {$required}>";
                 $html .= "<option value=''>Select {$label}</option>";
-                if (!empty($value)) {
-                    $html .= "<option value='{$value}' selected>{$value}</option>";
+                
+                // Check if default_value contains a comma-separated list
+                $options = [];
+                if (!empty($row['default_value'])) {
+                    // Check if it's a comma-separated list
+                    if (strpos($row['default_value'], ',') !== false) {
+                        // Split by comma and trim each value
+                        $options = array_map('trim', explode(',', $row['default_value']));
+                        $options = array_filter($options); // Remove empty values
+                    } else {
+                        // Single value, add it as an option
+                        $options = [trim($row['default_value'])];
+                    }
                 }
-                // TODO: Load options from master/config
+                
+                // Generate options from the list
+                if (!empty($options)) {
+                    foreach ($options as $option) {
+                        $option_escaped = htmlspecialchars($option);
+                        $selected = (!empty($value) && $value === $option) ? 'selected' : '';
+                        $html .= "<option value='{$option_escaped}' {$selected}>{$option_escaped}</option>";
+                    }
+                } else {
+                    // If no options from default_value but value exists, show it
+                    if (!empty($value)) {
+                        $value_escaped = htmlspecialchars($value);
+                        $html .= "<option value='{$value_escaped}' selected>{$value_escaped}</option>";
+                    }
+                }
+                
                 $html .= "</select>";
                 break;
 
