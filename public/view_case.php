@@ -54,6 +54,37 @@ if (mysqli_num_rows($table_check) > 0) {
     }
 }
 
+// Get template for this client (for report generation)
+$template_id = null;
+$template_name = null;
+$table_check_template = mysqli_query($con, "SHOW TABLES LIKE 'report_templates'");
+if ($table_check_template && mysqli_num_rows($table_check_template) > 0) {
+    // First try to get default template
+    $template_query = "SELECT id, template_name FROM report_templates 
+                       WHERE client_id = '$client_id' 
+                       AND status = 'ACTIVE' 
+                       AND is_default = 'YES' 
+                       LIMIT 1";
+    $template_result = mysqli_query($con, $template_query);
+    if ($template_result && mysqli_num_rows($template_result) > 0) {
+        $template_row = mysqli_fetch_assoc($template_result);
+        $template_id = $template_row['id'];
+        $template_name = $template_row['template_name'];
+    } else {
+        // If no default, get first active template for this client
+        $template_query = "SELECT id, template_name FROM report_templates 
+                           WHERE client_id = '$client_id' 
+                           AND status = 'ACTIVE' 
+                           LIMIT 1";
+        $template_result = mysqli_query($con, $template_query);
+        if ($template_result && mysqli_num_rows($template_result) > 0) {
+            $template_row = mysqli_fetch_assoc($template_result);
+            $template_id = $template_row['id'];
+            $template_name = $template_row['template_name'];
+        }
+    }
+}
+
 // Display messages
 if (isset($_SESSION['success_message'])) {
     echo '<div class="alert alert-success alert-dismissible fade show" role="alert">';
@@ -87,9 +118,18 @@ if (isset($_SESSION['error_message'])) {
                             <a href="case_manage.php" class="btn btn-secondary btn-sm">
                                 <i class="fas fa-arrow-left"></i> Back to Cases
                             </a>
-                            <a href="generate_report.php?case_id=<?php echo $case_id; ?>" class="btn btn-success btn-sm" target="_blank" title="Generate Full Case Report">
-                                <i class="fas fa-file-pdf"></i> Generate Report
-                            </a>
+                            <?php if ($template_id): ?>
+                                <a href="generate_report.php?template_id=<?php echo $template_id; ?>&case_id=<?php echo $case_id; ?>" class="btn btn-success btn-sm" target="_blank" title="Generate Report using <?php echo htmlspecialchars($template_name); ?>">
+                                    <i class="fas fa-file-pdf"></i> Generate Report
+                                </a>
+                            <?php else: ?>
+                                <button class="btn btn-success btn-sm" disabled title="No template configured for this client">
+                                    <i class="fas fa-file-pdf"></i> Generate Report
+                                </button>
+                                <small class="text-muted d-block mt-1">
+                                    <a href="template_editor.php?client_id=<?php echo $client_id; ?>" class="text-decoration-none">Create Template</a>
+                                </small>
+                            <?php endif; ?>
                             <a href="add_new_case.php?step=2&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>" class="btn btn-warning btn-sm">
                                 <i class="fas fa-edit"></i> Edit Case Info
                             </a>

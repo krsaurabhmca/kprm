@@ -282,7 +282,8 @@ function openDocInPopup(url) {
 
 <script>
   let idleTime = 0;
-  const LOGOUT_TIME = 600; // seconds
+  const LOGOUT_TIME = 500; // seconds
+  const DISPLAY_DELAY = 60; // show timer after 30 seconds idle
   let countdownInterval;
 
   const timerBox = document.getElementById("idle-timer");
@@ -291,11 +292,7 @@ function openDocInPopup(url) {
   // Reset idle time on activity
   function resetIdle() {
     idleTime = 0;
-
-    // Hide timer if showing
     timerBox.style.display = "none";
-
-    // Stop countdown if running
     clearInterval(countdownInterval);
   }
 
@@ -303,14 +300,15 @@ function openDocInPopup(url) {
   setInterval(() => {
     idleTime++;
 
+    // Auto logout
     if (idleTime >= LOGOUT_TIME) {
-      window.location.href = "https://kprm.co.in/system/system_process.php?task=auto_logout";
+      window.location.href =
+        "https://kprm.co.in/system/system_process.php?task=auto_logout";
     }
 
-    // Start countdown when idle
-    if (idleTime > 0) {
+    // Show countdown ONLY after 30 seconds idle
+    if (idleTime >= DISPLAY_DELAY) {
       const remaining = LOGOUT_TIME - idleTime;
-
       timerBox.style.display = "block";
       timerCount.innerText = remaining;
     }

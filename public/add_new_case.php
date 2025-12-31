@@ -118,7 +118,7 @@ include('../system/all_header.php');
                                         <input type="hidden" name="case_id" value="<?php echo $case_id; ?>">
                                         
                                         <!-- Case Status -->
-                                        <div class="row mb-3">
+                                        <!-- <div class="row mb-3">
                                             <div class="col-md-6">
                                                 <label class="form-label"><strong>Case Status</strong></label>
                                                 <select name="case_status" class="form-select">
@@ -128,7 +128,7 @@ include('../system/all_header.php');
                                                     <option value="ON_HOLD" <?php echo $existing_case_status == 'ON_HOLD' ? 'selected' : ''; ?>>ON HOLD</option>
                                                 </select>
                                             </div>
-                                        </div>
+                                        </div> -->
                                         
                                         <?php echo build_client_meta_form($client_id, $existing_case_info); ?>
                                         
