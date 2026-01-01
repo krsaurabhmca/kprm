@@ -69,6 +69,11 @@ $placeholders = [
         'task_status' => 'Task Status',
         'task_remarks' => 'Task Remarks (with line breaks)',
         'no_of_task' => 'Number of Tasks',
+        'over_all_status' => 'Overall Status (Based on All Tasks - CNV/Negative/Positive)',
+    ],
+    'task_loop' => [
+        'TaskLoop' => 'Task Loop Table (Complete Table with All Tasks)',
+        'TaskCountLoop' => 'Task Count Summary (Horizontal - Task Name, Count, Status)',
     ],
     'document_loop' => [
         'document_loop_start' => 'Start Document Loop',
@@ -482,6 +487,18 @@ document.querySelectorAll('.placeholder-item').forEach(item => {
 
 // Insert placeholder based on current mode
 function insertPlaceholder(placeholder) {
+    // Special handling for TaskLoop - show column selection modal
+    if (placeholder === '{{TaskLoop}}') {
+        showTaskLoopColumnModal();
+        return;
+    }
+    
+    // Special handling for TaskCountLoop - show options modal
+    if (placeholder === '{{TaskCountLoop}}') {
+        showTaskCountLoopModal();
+        return;
+    }
+    
     if (currentMode === 'code') {
         const textarea = document.getElementById('template_html');
         const start = textarea.selectionStart;
@@ -527,6 +544,357 @@ function insertPlaceholder(placeholder) {
     }
 }
 
+// Show TaskLoop column selection modal
+function showTaskLoopColumnModal() {
+    // Show modal to select columns
+    const modalHTML = `
+        <div class="modal fade" id="taskLoopColumnModal" tabindex="-1" aria-labelledby="taskLoopColumnModalLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="taskLoopColumnModalLabel">
+                            <i class="fas fa-table me-2"></i>Task Loop Table - Select Columns
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-muted mb-3">Select which columns to include in the task table:</p>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="col_serial" checked>
+                            <label class="form-check-label" for="col_serial">
+                                <strong>Serial Number</strong>
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="col_name" checked>
+                            <label class="form-check-label" for="col_name">
+                                <strong>Task Name</strong>
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="col_status" checked>
+                            <label class="form-check-label" for="col_status">
+                                <strong>Task Status</strong>
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="col_remarks" checked>
+                            <label class="form-check-label" for="col_remarks">
+                                <strong>Task Remarks</strong>
+                            </label>
+                        </div>
+                        <div class="alert alert-info mt-3 mb-0">
+                            <small><i class="fas fa-info-circle me-1"></i> The selected columns will be shown in the task table. You can customize the table appearance later.</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary" onclick="insertTaskLoopWithColumns()">
+                            <i class="fas fa-check me-1"></i>Insert Task Loop
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Remove existing modal if any
+    const existingModal = document.getElementById('taskLoopColumnModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    // Add modal to body
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    // Show modal using Bootstrap
+    const modalElement = new bootstrap.Modal(document.getElementById('taskLoopColumnModal'));
+    modalElement.show();
+    
+    // Clean up modal after hidden
+    document.getElementById('taskLoopColumnModal').addEventListener('hidden.bs.modal', function() {
+        this.remove();
+    });
+}
+
+// Insert TaskLoop placeholder with column selection
+function insertTaskLoopWithColumns() {
+    const showSerial = document.getElementById('col_serial').checked;
+    const showName = document.getElementById('col_name').checked;
+    const showStatus = document.getElementById('col_status').checked;
+    const showRemarks = document.getElementById('col_remarks').checked;
+    
+    // Build placeholder with column selection
+    let placeholder = '{{TaskLoop';
+    const columns = [];
+    if (showSerial) columns.push('serial');
+    if (showName) columns.push('name');
+    if (showStatus) columns.push('status');
+    if (showRemarks) columns.push('remarks');
+    
+    if (columns.length > 0 && columns.length < 4) {
+        // If not all columns selected, add column filter
+        placeholder += '|columns=' + columns.join(',');
+    }
+    placeholder += '}}';
+    
+    // Insert placeholder using the existing function
+    if (currentMode === 'code') {
+        const textarea = document.getElementById('template_html');
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+        textarea.value = text.substring(0, start) + placeholder + text.substring(end);
+        textarea.focus();
+        textarea.setSelectionRange(start + placeholder.length, start + placeholder.length);
+    } else {
+        // Visual mode
+        const visualEditor = document.getElementById('visual_editor');
+        const selection = window.getSelection();
+        
+        if (selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            range.deleteContents();
+            
+            const placeholderTag = document.createElement('span');
+            placeholderTag.className = 'placeholder-tag';
+            placeholderTag.setAttribute('data-placeholder', placeholder);
+            placeholderTag.textContent = placeholder;
+            placeholderTag.contentEditable = 'false';
+            
+            range.insertNode(placeholderTag);
+            
+            // Move cursor after placeholder
+            range.setStartAfter(placeholderTag);
+            range.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(range);
+        } else {
+            // Append at end
+            const placeholderTag = document.createElement('span');
+            placeholderTag.className = 'placeholder-tag';
+            placeholderTag.setAttribute('data-placeholder', placeholder);
+            placeholderTag.textContent = placeholder;
+            placeholderTag.contentEditable = 'false';
+            visualEditor.appendChild(placeholderTag);
+        }
+        
+        visualEditor.focus();
+    }
+    
+    // Close modal
+    const modalElement = bootstrap.Modal.getInstance(document.getElementById('taskLoopColumnModal'));
+    if (modalElement) {
+        modalElement.hide();
+    }
+}
+
+// Show TaskCountLoop options modal (horizontal task count summary)
+function showTaskCountLoopModal() {
+    // Show modal to select display options
+    const modalHTML = `
+        <div class="modal fade" id="taskCountLoopModal" tabindex="-1" aria-labelledby="taskCountLoopModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="taskCountLoopModalLabel">
+                            <i class="fas fa-list-ul me-2"></i>Task Count Summary - Select Display Options
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-muted mb-3">Select what to display in the horizontal task summary table:</p>
+                        
+                        <div class="mb-3">
+                            <strong class="d-block mb-2">Display Options:</strong>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="count_show_name" checked>
+                                <label class="form-check-label" for="count_show_name">
+                                    <strong>Task Name Row</strong>
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="count_show_count" checked>
+                                <label class="form-check-label" for="count_show_count">
+                                    <strong>Count Row</strong>
+                                </label>
+                            </div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="count_show_status" checked>
+                                <label class="form-check-label" for="count_show_status">
+                                    <strong>Status Row</strong>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <hr>
+                        
+                        <div class="mb-3">
+                            <strong class="d-block mb-2">Row Label Options:</strong>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="count_show_labels" checked>
+                                <label class="form-check-label" for="count_show_labels">
+                                    <strong>Show Row Labels</strong> (First column with labels like "Task Name", "Count", "Status")
+                                </label>
+                            </div>
+                            
+                            <div id="labelInputs" class="mt-3">
+                                <div class="row mb-2">
+                                    <div class="col-md-4">
+                                        <label class="form-label small"><strong>Task Name Label:</strong></label>
+                                        <input type="text" class="form-control form-control-sm" id="label_task_name" value="Task Name" placeholder="Task Name">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label small"><strong>Count Label:</strong></label>
+                                        <input type="text" class="form-control form-control-sm" id="label_count" value="Count" placeholder="Count">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label small"><strong>Status Label:</strong></label>
+                                        <input type="text" class="form-control form-control-sm" id="label_status" value="Status" placeholder="Status">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info mt-3 mb-0">
+                            <small><i class="fas fa-info-circle me-1"></i> This will create a horizontal table with task names as columns. Each row shows Task Names, Counts, or Statuses respectively.</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary" onclick="insertTaskCountLoopWithOptions()">
+                            <i class="fas fa-check me-1"></i>Insert Task Count Summary
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Remove existing modal if any
+    const existingModal = document.getElementById('taskCountLoopModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    // Add modal to body
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    // Show/hide label inputs based on checkbox
+    setTimeout(function() {
+        const modal = document.getElementById('taskCountLoopModal');
+        if (modal) {
+            const showLabelsCheckbox = modal.querySelector('#count_show_labels');
+            const labelInputs = modal.querySelector('#labelInputs');
+            
+            if (showLabelsCheckbox && labelInputs) {
+                // Set initial state
+                labelInputs.style.display = showLabelsCheckbox.checked ? 'block' : 'none';
+                
+                // Add event listener
+                showLabelsCheckbox.addEventListener('change', function() {
+                    labelInputs.style.display = this.checked ? 'block' : 'none';
+                });
+            }
+        }
+    }, 100);
+    
+    // Show modal using Bootstrap
+    const modalElement = new bootstrap.Modal(document.getElementById('taskCountLoopModal'));
+    modalElement.show();
+    
+    // Clean up modal after hidden
+    document.getElementById('taskCountLoopModal').addEventListener('hidden.bs.modal', function() {
+        this.remove();
+    });
+}
+
+// Insert TaskCountLoop placeholder with options
+function insertTaskCountLoopWithOptions() {
+    const showName = document.getElementById('count_show_name').checked;
+    const showCount = document.getElementById('count_show_count').checked;
+    const showStatus = document.getElementById('count_show_status').checked;
+    const showLabels = document.getElementById('count_show_labels').checked;
+    
+    // Get custom labels
+    const labelTaskName = document.getElementById('label_task_name').value.trim() || 'Task Name';
+    const labelCount = document.getElementById('label_count').value.trim() || 'Count';
+    const labelStatus = document.getElementById('label_status').value.trim() || 'Status';
+    
+    // Build placeholder with options
+    let placeholder = '{{TaskCountLoop';
+    const options = [];
+    if (showName) options.push('name');
+    if (showCount) options.push('count');
+    if (showStatus) options.push('status');
+    
+    if (options.length > 0) {
+        placeholder += '|show=' + options.join(',');
+    }
+    
+    // Add label visibility
+    if (!showLabels) {
+        placeholder += '|show_labels=no';
+    }
+    
+    // Add custom labels if changed from default
+    if (labelTaskName !== 'Task Name' || labelCount !== 'Count' || labelStatus !== 'Status') {
+        placeholder += '|labels=' + encodeURIComponent(labelTaskName) + ',' + encodeURIComponent(labelCount) + ',' + encodeURIComponent(labelStatus);
+    }
+    
+    placeholder += '}}';
+    
+    // Insert placeholder
+    if (currentMode === 'code') {
+        const textarea = document.getElementById('template_html');
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+        textarea.value = text.substring(0, start) + placeholder + text.substring(end);
+        textarea.focus();
+        textarea.setSelectionRange(start + placeholder.length, start + placeholder.length);
+    } else {
+        // Visual mode
+        const visualEditor = document.getElementById('visual_editor');
+        const selection = window.getSelection();
+        
+        if (selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            range.deleteContents();
+            
+            const placeholderTag = document.createElement('span');
+            placeholderTag.className = 'placeholder-tag';
+            placeholderTag.setAttribute('data-placeholder', placeholder);
+            placeholderTag.textContent = placeholder;
+            placeholderTag.contentEditable = 'false';
+            
+            range.insertNode(placeholderTag);
+            
+            // Move cursor after placeholder
+            range.setStartAfter(placeholderTag);
+            range.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(range);
+        } else {
+            // Append at end
+            const placeholderTag = document.createElement('span');
+            placeholderTag.className = 'placeholder-tag';
+            placeholderTag.setAttribute('data-placeholder', placeholder);
+            placeholderTag.textContent = placeholder;
+            placeholderTag.contentEditable = 'false';
+            visualEditor.appendChild(placeholderTag);
+        }
+        
+        visualEditor.focus();
+    }
+    
+    // Close modal
+    const modalElement = bootstrap.Modal.getInstance(document.getElementById('taskCountLoopModal'));
+    if (modalElement) {
+        modalElement.hide();
+    }
+}
+
 // Text formatting functions for visual editor
 function formatText(command) {
     if (currentMode === 'visual') {
@@ -560,6 +928,52 @@ function setAlignment(align) {
                 range.insertNode(div);
             }
         }
+    }
+}
+
+// Insert placeholder directly
+function insertPlaceholderDirect(placeholder) {
+    if (currentMode === 'code') {
+        const textarea = document.getElementById('template_html');
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+        textarea.value = text.substring(0, start) + placeholder + text.substring(end);
+        textarea.focus();
+        textarea.setSelectionRange(start + placeholder.length, start + placeholder.length);
+    } else {
+        // Visual mode
+        const visualEditor = document.getElementById('visual_editor');
+        const selection = window.getSelection();
+        
+        if (selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            range.deleteContents();
+            
+            const placeholderTag = document.createElement('span');
+            placeholderTag.className = 'placeholder-tag';
+            placeholderTag.setAttribute('data-placeholder', placeholder);
+            placeholderTag.textContent = placeholder;
+            placeholderTag.contentEditable = 'false';
+            
+            range.insertNode(placeholderTag);
+            
+            // Move cursor after placeholder
+            range.setStartAfter(placeholderTag);
+            range.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(range);
+        } else {
+            // Append at end
+            const placeholderTag = document.createElement('span');
+            placeholderTag.className = 'placeholder-tag';
+            placeholderTag.setAttribute('data-placeholder', placeholder);
+            placeholderTag.textContent = placeholder;
+            placeholderTag.contentEditable = 'false';
+            visualEditor.appendChild(placeholderTag);
+        }
+        
+        visualEditor.focus();
     }
 }
 

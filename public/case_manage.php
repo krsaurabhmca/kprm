@@ -27,35 +27,57 @@ try {
     // If checks fail, use safe defaults
 }
 
-// Get Case Statistics
+// Get Case Statistics - Updated for new status logic (PENDING, IN_PROGRESS, CLOSED)
 if ($has_case_status) {
     $stats_sql = "SELECT 
         COUNT(*) as total,
-        SUM(CASE WHEN case_status = 'ACTIVE' THEN 1 ELSE 0 END) as active,
         SUM(CASE WHEN case_status = 'PENDING' THEN 1 ELSE 0 END) as pending,
-        SUM(CASE WHEN case_status = 'COMPLETED' THEN 1 ELSE 0 END) as completed,
-        SUM(CASE WHEN case_status = 'ON_HOLD' THEN 1 ELSE 0 END) as on_hold
+        SUM(CASE WHEN case_status = 'IN_PROGRESS' THEN 1 ELSE 0 END) as in_progress,
+        SUM(CASE WHEN case_status = 'CLOSED' THEN 1 ELSE 0 END) as closed
         FROM cases WHERE status != 'DELETED'";
 } else {
-    // If case_status column doesn't exist, count all as active
-    $stats_sql = "SELECT 
-        COUNT(*) as total,
-        COUNT(*) as active,
-        0 as pending,
-        0 as completed,
-        0 as on_hold
-        FROM cases WHERE status != 'DELETED'";
+    // If case_status column doesn't exist, calculate from tasks
+    if ($has_case_tasks) {
+        // Calculate case status from tasks
+        $stats_sql = "SELECT 
+            COUNT(DISTINCT c.id) as total,
+            SUM(CASE WHEN calc_status = 'PENDING' THEN 1 ELSE 0 END) as pending,
+            SUM(CASE WHEN calc_status = 'IN_PROGRESS' THEN 1 ELSE 0 END) as in_progress,
+            SUM(CASE WHEN calc_status = 'CLOSED' THEN 1 ELSE 0 END) as closed
+            FROM (
+                SELECT c.id,
+                    CASE 
+                        WHEN COUNT(ct.id) = 0 THEN 'PENDING'
+                        WHEN SUM(CASE WHEN ct.task_status = 'PENDING' THEN 1 ELSE 0 END) = COUNT(ct.id) THEN 'PENDING'
+                        WHEN SUM(CASE WHEN ct.task_status = 'COMPLETED' THEN 1 ELSE 0 END) = COUNT(ct.id) THEN 'CLOSED'
+                        ELSE 'IN_PROGRESS'
+                    END as calc_status
+                FROM cases c
+                LEFT JOIN case_tasks ct ON c.id = ct.case_id AND ct.status = 'ACTIVE'
+                WHERE c.status != 'DELETED'
+                GROUP BY c.id
+            ) as calc
+            CROSS JOIN cases c ON calc.id = c.id
+            GROUP BY 1";
+    } else {
+        // Fallback: count all as pending
+        $stats_sql = "SELECT 
+            COUNT(*) as total,
+            COUNT(*) as pending,
+            0 as in_progress,
+            0 as closed
+            FROM cases WHERE status != 'DELETED'";
+    }
 }
 $stats_res = mysqli_query($con, $stats_sql);
-$stats = ['total' => 0, 'active' => 0, 'pending' => 0, 'completed' => 0, 'on_hold' => 0];
+$stats = ['total' => 0, 'pending' => 0, 'in_progress' => 0, 'closed' => 0];
 if ($stats_res) {
     $stats_row = mysqli_fetch_assoc($stats_res);
     $stats = [
         'total' => (int)$stats_row['total'],
-        'active' => (int)$stats_row['active'],
-        'pending' => (int)$stats_row['pending'],
-        'completed' => (int)$stats_row['completed'],
-        'on_hold' => (int)$stats_row['on_hold']
+        'pending' => (int)($stats_row['pending'] ?? 0),
+        'in_progress' => (int)($stats_row['in_progress'] ?? 0),
+        'closed' => (int)($stats_row['closed'] ?? 0)
     ];
 }
 
@@ -165,7 +187,7 @@ if (isset($res['status']) && $res['status'] == 'error' && $case_count > 0) {
                     </div>
                 </div>
             </div>
-            <div class="col-md-2 col-sm-4 col-6 mb-3">
+            <!-- <div class="col-md-2 col-sm-4 col-6 mb-3">
                 <div class="card border-0 shadow-sm border-start border-success border-4">
                     <div class="card-body p-3">
                         <div class="d-flex align-items-center">
@@ -179,7 +201,7 @@ if (isset($res['status']) && $res['status'] == 'error' && $case_count > 0) {
                         </div>
                     </div>
                 </div>
-            </div>
+            </div> -->
             <div class="col-md-2 col-sm-4 col-6 mb-3">
                 <div class="card border-0 shadow-sm border-start border-warning border-4">
                     <div class="card-body p-3">
@@ -200,11 +222,26 @@ if (isset($res['status']) && $res['status'] == 'error' && $case_count > 0) {
                     <div class="card-body p-3">
                         <div class="d-flex align-items-center">
                             <div class="flex-grow-1">
-                                <div class="text-muted small mb-1">Completed</div>
-                                <div class="h5 mb-0 fw-bold text-info"><?php echo $stats['completed']; ?></div>
+                                <div class="text-muted small mb-1">In Progress</div>
+                                <div class="h5 mb-0 fw-bold text-info"><?php echo $stats['in_progress']; ?></div>
                             </div>
                             <div class="text-info">
-                                <i class="fas fa-check-double fa-2x opacity-50"></i>
+                                <i class="fas fa-spinner fa-2x opacity-50"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2 col-sm-4 col-6 mb-3">
+                <div class="card border-0 shadow-sm border-start border-success border-4">
+                    <div class="card-body p-3">
+                        <div class="d-flex align-items-center">
+                            <div class="flex-grow-1">
+                                <div class="text-muted small mb-1">Closed</div>
+                                <div class="h5 mb-0 fw-bold text-success"><?php echo $stats['closed']; ?></div>
+                            </div>
+                            <div class="text-success">
+                                <i class="fas fa-check-circle fa-2x opacity-50"></i>
                             </div>
                         </div>
                     </div>
@@ -321,12 +358,25 @@ if (isset($res['status']) && $res['status'] == 'error' && $case_count > 0) {
                                     </td>
                                     <td>
                                         <?php 
-                                        $case_status = $row['case_status'] ?? 'ACTIVE';
+                                        $case_status = $row['case_status'] ?? 'PENDING';
+                                        
+                                        // If case_status column doesn't exist, calculate from tasks
+                                        if (!$has_case_status && $has_case_tasks) {
+                                            $case_id = $row['id'];
+                                            $case_tasks_result = get_all('case_tasks', 'task_status', ['case_id' => $case_id, 'status' => 'ACTIVE']);
+                                            $case_tasks = [];
+                                            if ($case_tasks_result['count'] > 0) {
+                                                foreach ($case_tasks_result['data'] as $t) {
+                                                    $case_tasks[] = ['db_status' => $t['task_status'] ?? 'PENDING'];
+                                                }
+                                            }
+                                            $case_status = calculate_case_status($case_tasks);
+                                        }
+                                        
                                         $status_config = [
-                                            'ACTIVE' => ['color' => 'success', 'icon' => 'check-circle'],
                                             'PENDING' => ['color' => 'warning', 'icon' => 'clock'],
-                                            'COMPLETED' => ['color' => 'info', 'icon' => 'check-double'],
-                                            'ON_HOLD' => ['color' => 'secondary', 'icon' => 'pause']
+                                            'IN_PROGRESS' => ['color' => 'info', 'icon' => 'spinner'],
+                                            'CLOSED' => ['color' => 'success', 'icon' => 'check-circle']
                                         ];
                                         $status_info = $status_config[$case_status] ?? ['color' => 'secondary', 'icon' => 'circle'];
                                         ?>

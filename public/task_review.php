@@ -117,6 +117,77 @@ $review_remarks = $task_data_json['review_remarks'] ?? '';
         <div class="row">
             <!-- Left Column: Review Information -->
             <div class="col-lg-7 mb-3">
+                <!-- Task Details -->
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header bg-primary text-white py-2">
+                        <h6 class="mb-0 fw-bold">
+                            <i class="fas fa-info-circle me-2"></i>Task Details
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-2">
+                            <div class="col-md-4">
+                                <label class="form-label text-muted small mb-0">Task Name</label>
+                                <div class="fw-bold"><?php echo htmlspecialchars($task_name); ?></div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label text-muted small mb-0">Task Type</label>
+                                <div class="fw-bold"><?php echo htmlspecialchars($task_template_data['task_type'] ?? 'N/A'); ?></div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label text-muted small mb-0">Current Status</label>
+                                <div>
+                                    <?php
+                                    $status_display = get_task_status_display($current_status, $task_data_json);
+                                    $status_badges = [
+                                        'Pending' => 'warning',
+                                        'Assigned' => 'info',
+                                        'Verified' => 'primary',
+                                        'Reviewed' => 'warning',
+                                        'Closed' => 'success'
+                                    ];
+                                    $badge_color = $status_badges[$status_display] ?? 'secondary';
+                                    ?>
+                                    <span class="badge bg-<?php echo $badge_color; ?>"><?php echo htmlspecialchars($status_display); ?></span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Task Meta Fields -->
+                        <?php
+                        // Get task meta fields
+                        $task_meta_fields = get_all('tasks_meta', '*', ['task_id' => $task_template_id, 'status' => 'ACTIVE'], 'id ASC');
+                        if ($task_meta_fields['count'] > 0):
+                        ?>
+                            <hr class="my-3">
+                            <h6 class="mb-2 text-muted small">
+                                <i class="fas fa-list-ul me-1"></i> Task Information
+                            </h6>
+                            <div class="row">
+                                <?php
+                                foreach ($task_meta_fields['data'] as $field) {
+                                    $field_value = isset($task_data_json[$field['field_name']]) ? $task_data_json[$field['field_name']] : '';
+                                    ?>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label text-muted small mb-0">
+                                            <?php echo htmlspecialchars($field['display_name'] ?? $field['field_name']); ?>
+                                        </label>
+                                        <div class="field-value p-2 bg-light border rounded">
+                                            <?php echo !empty($field_value) ? nl2br(htmlspecialchars($field_value)) : '<span class="text-muted fst-italic">Not filled</span>'; ?>
+                                        </div>
+                                    </div>
+                                    <?php
+                                }
+                                ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="text-center py-2">
+                                <small class="text-muted">No additional task fields configured</small>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
                 <!-- Verifier Remarks -->
                 <?php if (!empty($verifier_remarks)): ?>
                     <div class="card shadow-sm mb-3">

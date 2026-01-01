@@ -739,25 +739,21 @@ function generate_report_from_html($html_template, $case_id = null, $client_id =
                     }
                     
                     // Map review_status to client status words
+                    // task_status placeholder should show only reviewer's review_status with client status words
                     $review_status_display = '';
                     if (!empty($review_status)) {
                         $review_status_display = $client_status_words[$review_status] ?? $review_status;
                     }
                     
-                    // Combine task_status with review_status if available (using client status words)
-                    $combined_status = $task_status;
-                    if (!empty($review_status_display)) {
-                      //  $combined_status = $task_status . ' (Review: ' . $review_status_display . ')';
-                        $combined_status =  $review_status_display ;
-
-                    }
+                    // Use review_status with client status words as the task status (not the database task_status)
+                    $combined_status = $review_status_display; // Show only review_status with client words
                     
                     $documents[] = [
                         'id' => $row['id'],
                         'task_type' => $task_type,
                         'task_name' => $task_name,
-                        'status' => $combined_status,
-                        'review_status' => $review_status,
+                        'status' => $combined_status, // This will be review_status with client words
+                        'review_status' => $review_status, // Keep raw review_status for overall_status calculation
                         'remarks' => $task_remarks,
                         'particulars' => 'Document ' . (count($documents) + 1),
                         'meta' => $task_meta
@@ -772,13 +768,19 @@ function generate_report_from_html($html_template, $case_id = null, $client_id =
                     $task_data['task_type'] = !empty($all_task_types) ? implode(', ', $all_task_types) : ($first_task['task_type'] ?? '');
                     // Task remarks with line breaks (use <br> for HTML) - join multiple remarks with line breaks
                     $task_data['task_remarks'] = !empty($all_task_remarks) ? implode('<br>', array_map(function($r) { return nl2br($r); }, $all_task_remarks)) : nl2br($first_task['remarks'] ?? '');
-                    // Task status (line break separated if multiple) - includes review_status
+                    // Task status (line break separated if multiple) - shows review_status with client status words only
                     $all_task_statuses = [];
                     foreach ($documents as $doc) {
-                        if (!empty($doc['status']) && !in_array($doc['status'], $all_task_statuses)) {
-                            $all_task_statuses[] = $doc['status'];
+                        // Use review_status from the document, mapped to client status words
+                        $doc_review_status = $doc['review_status'] ?? '';
+                        if (!empty($doc_review_status)) {
+                            $review_status_word = $client_status_words[$doc_review_status] ?? $doc_review_status;
+                            if (!empty($review_status_word) && !in_array($review_status_word, $all_task_statuses)) {
+                                $all_task_statuses[] = $review_status_word;
+                            }
                         }
                     }
+                    // Use review_status words, or fallback to status if no review_status
                     $task_data['task_status'] = !empty($all_task_statuses) ? implode('<br>', $all_task_statuses) : ($first_task['status'] ?? '');
                 }
             }
@@ -828,8 +830,13 @@ function generate_report_from_html($html_template, $case_id = null, $client_id =
                     $task_data['no_of_task'] = count($documents);
                     // Task remarks with line breaks
                     $task_data['task_remarks'] = nl2br($first_task['remarks'] ?? '');
-                    // Task status (may include review_status from meta)
-                    $task_data['task_status'] = $first_task['status'] ?? '';
+                    // Task status - shows review_status with client status words only
+                    $first_review_status = $first_task['review_status'] ?? '';
+                    if (!empty($first_review_status)) {
+                        $task_data['task_status'] = $client_status_words[$first_review_status] ?? $first_review_status;
+                    } else {
+                        $task_data['task_status'] = ''; // Empty if no review_status
+                    }
                 }
             }
         }
@@ -957,10 +964,424 @@ function generate_report_from_html($html_template, $case_id = null, $client_id =
         $agency_logo_html = $logo_html;
     }
     
-    // 7. Merge custom data (overrides)
+    // 7. Calculate Overall Status based on all tasks (after all tasks are collected)
+    $overall_status = '';
+    $overall_status_word = '';
+    
+    if ($case_id && !empty($documents)) {
+        $has_cnv = false;
+        $has_negative = false;
+        $all_positive = true;
+        $tasks_with_review_status = 0;
+        
+        foreach ($documents as $doc) {
+            $review_status = $doc['review_status'] ?? '';
+            
+            if (!empty($review_status)) {
+                $tasks_with_review_status++;
+                
+                // Check for CNV (highest priority)
+                if ($review_status === 'CNV') {
+                    $has_cnv = true;
+                    $all_positive = false;
+                }
+                // Check for NEGATIVE (medium priority)
+                elseif ($review_status === 'NEGATIVE') {
+                    $has_negative = true;
+                    $all_positive = false;
+                }
+                // If review_status is not POSITIVE, mark as not all positive
+                elseif ($review_status !== 'POSITIVE') {
+                    $all_positive = false;
+                }
+            }
+            // If review_status is empty, we cannot say all are positive
+            // But still check other tasks for CNV/NEGATIVE
+        }
+        
+        // Determine overall status (priority: CNV > NEGATIVE > POSITIVE)
+        // Only if we have at least one task with review_status
+        if ($tasks_with_review_status > 0) {
+            if ($has_cnv) {
+                // If ANY task has CNV → CNV
+                $overall_status = 'CNV';
+                $overall_status_word = $client_status_words['CNV'] ?? 'CNV';
+            } elseif ($has_negative) {
+                // If ANY task has NEGATIVE → NEGATIVE
+                $overall_status = 'NEGATIVE';
+                $overall_status_word = $client_status_words['NEGATIVE'] ?? 'Negative';
+            } elseif ($all_positive && $tasks_with_review_status === count($documents)) {
+                // If ALL tasks have review_status AND all are POSITIVE → POSITIVE
+                $overall_status = 'POSITIVE';
+                $overall_status_word = $client_status_words['POSITIVE'] ?? 'Positive';
+            }
+        }
+    }
+    
+    // Add overall status to data array
+    $data['over_all_status'] = $overall_status_word;
+    $data['overall_status'] = $overall_status_word; // Also support without underscore
+    $data['over_all_status_raw'] = $overall_status; // Raw status code
+    $data['overall_status_raw'] = $overall_status; // Raw status code without underscore
+    
+    // 8. Merge custom data (overrides)
     $data = array_merge($data, $custom_data);
     
-    // 8. Process Document Loop (support both {{loop_start}} and #loop_start# formats)
+    // 9. Process Task Loop - Single placeholder {{TaskLoop}} that generates complete table
+    // Get tasks from case_tasks table for task loop
+    $task_loop_items = [];
+    if ($case_id) {
+        $table_check = mysqli_query($con, "SHOW TABLES LIKE 'case_tasks'");
+        $has_case_tasks_loop = ($table_check && mysqli_num_rows($table_check) > 0);
+        
+        if ($has_case_tasks_loop) {
+            $tasks_query = "SELECT ct.*, t.task_name as template_task_name, t.task_type as template_task_type 
+                       FROM case_tasks ct 
+                       LEFT JOIN tasks t ON ct.task_template_id = t.id 
+                       WHERE ct.case_id = '$case_id' AND ct.status = 'ACTIVE' 
+                       ORDER BY ct.id ASC";
+            $tasks_result = mysqli_query($con, $tasks_query);
+            
+            if ($tasks_result) {
+                $serial_no = 1;
+                while ($row = mysqli_fetch_assoc($tasks_result)) {
+                    $task_name = $row['task_name'] ?? $row['template_task_name'] ?? '';
+                    $task_status_db = $row['task_status'] ?? 'PENDING';
+                    
+                    // Get task data JSON
+                    $task_data_json = [];
+                    if (!empty($row['task_data'])) {
+                        $task_data_json = json_decode($row['task_data'], true);
+                        if (!is_array($task_data_json)) {
+                            $task_data_json = [];
+                        }
+                    }
+                    
+                    // Get review_status and map to client status words
+                    // In reports, task_status should show reviewer's review_status with client words
+                    $review_status = $task_data_json['review_status'] ?? '';
+                    $task_status_display = '';
+                    
+                    if (!empty($review_status)) {
+                        // Map review_status to client status words
+                        $task_status_display = $client_status_words[$review_status] ?? $review_status;
+                    } else {
+                        // If no review_status, show empty or fallback to workflow status
+                        // But for reports, we prefer to show empty if not reviewed
+                        $task_status_display = ''; // Show empty if not reviewed
+                    }
+                    
+                    // Get task remarks
+                    $task_remarks = $task_data_json['review_remarks'] ?? $task_data_json['verifier_remarks'] ?? '';
+                    
+                    $task_loop_items[] = [
+                        'serial_no' => $serial_no++,
+                        'task_name' => $task_name,
+                        'task_status' => $task_status_display, // This will be review_status with client words
+                        'task_remarks' => htmlspecialchars($task_remarks)
+                    ];
+                }
+            }
+        }
+    }
+    
+    // Replace {{TaskLoop}} placeholder with complete table
+    // Support both {{TaskLoop}} and {{TaskLoop|columns=serial,name,status,remarks}} formats
+    if (preg_match('/\{\{TaskLoop(?:\|columns=([^}]+))?\}\}/', $html, $matches)) {
+        $selected_columns = ['serial', 'name', 'status', 'remarks']; // Default: show all
+        
+        // Parse column selection if provided
+        if (!empty($matches[1])) {
+            $selected_columns = array_map('trim', explode(',', $matches[1]));
+        }
+        
+        // Build complete table with header (once) and rows
+        $table_html = '<table border="1" cellpadding="5" cellspacing="0" style="width:100%; max-width:100%; border-collapse:collapse; table-layout:auto;">' . "\n";
+        $table_html .= '<thead>' . "\n";
+        $table_html .= '<tr>' . "\n";
+        
+        $col_count = 0;
+        
+        if (in_array('serial', $selected_columns)) {
+            $table_html .= '<th style="width:auto; text-align:left; padding:8px; background-color:#f8f9fa;">Sr. No.</th>' . "\n";
+            $col_count++;
+        }
+        if (in_array('name', $selected_columns)) {
+            $table_html .= '<th style="width:auto; text-align:left; padding:8px; background-color:#f8f9fa;">Task Name</th>' . "\n";
+            $col_count++;
+        }
+        if (in_array('status', $selected_columns)) {
+            $table_html .= '<th style="width:auto; text-align:left; padding:8px; background-color:#f8f9fa;">Status</th>' . "\n";
+            $col_count++;
+        }
+        if (in_array('remarks', $selected_columns)) {
+            $table_html .= '<th style="width:auto; text-align:left; padding:8px; background-color:#f8f9fa;">Remarks</th>' . "\n";
+            $col_count++;
+        }
+        
+        $table_html .= '</tr>' . "\n";
+        $table_html .= '</thead>' . "\n";
+        $table_html .= '<tbody>' . "\n";
+        
+        // Add rows for each task
+        foreach ($task_loop_items as $task_item) {
+            $table_html .= '<tr>' . "\n";
+            
+            if (in_array('serial', $selected_columns)) {
+                $table_html .= '<td style="padding:8px; text-align:left;">' . $task_item['serial_no'] . '</td>' . "\n";
+            }
+            if (in_array('name', $selected_columns)) {
+                $table_html .= '<td style="padding:8px; text-align:left;">' . htmlspecialchars($task_item['task_name']) . '</td>' . "\n";
+            }
+            if (in_array('status', $selected_columns)) {
+                $table_html .= '<td style="padding:8px; text-align:left;">' . htmlspecialchars($task_item['task_status']) . '</td>' . "\n";
+            }
+            if (in_array('remarks', $selected_columns)) {
+                $table_html .= '<td style="padding:8px; text-align:left;">' . nl2br($task_item['task_remarks']) . '</td>' . "\n";
+            }
+            
+            $table_html .= '</tr>' . "\n";
+        }
+        
+        // If no tasks, show empty row
+        if (empty($task_loop_items)) {
+            $table_html .= '<tr>' . "\n";
+            $table_html .= '<td colspan="' . $col_count . '" style="padding:8px; text-align:center; color:#999;">No tasks found</td>' . "\n";
+            $table_html .= '</tr>' . "\n";
+        }
+        
+        $table_html .= '</tbody>' . "\n";
+        $table_html .= '</table>';
+        
+        // Replace the placeholder (with or without column filter)
+        $html = preg_replace('/\{\{TaskLoop(?:\|columns=[^}]+)?\}\}/', $table_html, $html, 1);
+    }
+    
+    // Also support legacy format #TaskLoop#
+    if (strpos($html, '#TaskLoop#') !== false) {
+        // Default: show all columns
+        $selected_columns = ['serial', 'name', 'status', 'remarks'];
+        
+        $table_html = '<table border="1" cellpadding="5" cellspacing="0" style="width:100%; max-width:100%; border-collapse:collapse; table-layout:auto;">' . "\n";
+        $table_html .= '<thead>' . "\n";
+        $table_html .= '<tr>' . "\n";
+        $table_html .= '<th style="width:auto; text-align:left; padding:8px; background-color:#f8f9fa;">Sr. No.</th>' . "\n";
+        $table_html .= '<th style="width:auto; text-align:left; padding:8px; background-color:#f8f9fa;">Task Name</th>' . "\n";
+        $table_html .= '<th style="width:auto; text-align:left; padding:8px; background-color:#f8f9fa;">Status</th>' . "\n";
+        $table_html .= '<th style="width:auto; text-align:left; padding:8px; background-color:#f8f9fa;">Remarks</th>' . "\n";
+        $table_html .= '</tr>' . "\n";
+        $table_html .= '</thead>' . "\n";
+        $table_html .= '<tbody>' . "\n";
+        
+        foreach ($task_loop_items as $task_item) {
+            $table_html .= '<tr>' . "\n";
+            $table_html .= '<td style="padding:8px; text-align:left;">' . $task_item['serial_no'] . '</td>' . "\n";
+            $table_html .= '<td style="padding:8px; text-align:left;">' . htmlspecialchars($task_item['task_name']) . '</td>' . "\n";
+            $table_html .= '<td style="padding:8px; text-align:left;">' . htmlspecialchars($task_item['task_status']) . '</td>' . "\n";
+            $table_html .= '<td style="padding:8px; text-align:left;">' . nl2br($task_item['task_remarks']) . '</td>' . "\n";
+            $table_html .= '</tr>' . "\n";
+        }
+        
+        if (empty($task_loop_items)) {
+            $table_html .= '<tr>' . "\n";
+            $table_html .= '<td colspan="4" style="padding:8px; text-align:center; color:#999;">No tasks found</td>' . "\n";
+            $table_html .= '</tr>' . "\n";
+        }
+        
+        $table_html .= '</tbody>' . "\n";
+        $table_html .= '</table>';
+        
+        $html = str_replace('#TaskLoop#', $table_html, $html);
+    }
+    
+    // Process TaskCountLoop - Horizontal task count summary (Task names as columns, rows for count/status)
+    // Format: {{TaskCountLoop|show=name,count,status|show_labels=yes|labels=Task Name,Count,Status}}
+    // Process all occurrences - use while loop to handle multiple instances
+    while (preg_match('/\{\{TaskCountLoop([^}]*)\}\}/', $html, $matches)) {
+        $params_str = $matches[1] ?? '';
+        $show_options = ['name', 'count', 'status']; // Default: show all
+        $show_labels = true; // Default: show labels
+        $labels = ['Task Name', 'Count', 'Status']; // Default labels
+        
+        // Parse parameters
+        if (!empty($params_str)) {
+            // Parse show= parameter
+            if (preg_match('/\|show=([^|]+)/', $params_str, $show_match)) {
+                $show_options = array_map('trim', explode(',', $show_match[1]));
+            }
+            
+            // Parse show_labels= parameter
+            if (preg_match('/\|show_labels=no/i', $params_str)) {
+                $show_labels = false;
+            }
+            
+            // Parse labels= parameter
+            if (preg_match('/\|labels=([^|]+)/', $params_str, $labels_match)) {
+                $labels_parsed = array_map('urldecode', array_map('trim', explode(',', $labels_match[1])));
+                if (count($labels_parsed) >= 3) {
+                    $labels = $labels_parsed;
+                }
+            }
+        }
+        
+        // Group tasks by name and count them, also get statuses
+        $task_summary = [];
+        foreach ($task_loop_items as $task_item) {
+            $task_name = $task_item['task_name'];
+            if (!isset($task_summary[$task_name])) {
+                $task_summary[$task_name] = [
+                    'name' => $task_name,
+                    'count' => 0,
+                    'statuses' => []
+                ];
+            }
+            $task_summary[$task_name]['count']++;
+            
+            // Collect unique statuses
+            $status = $task_item['task_status'];
+            if (!in_array($status, $task_summary[$task_name]['statuses'])) {
+                $task_summary[$task_name]['statuses'][] = $status;
+            }
+        }
+        
+        // Build horizontal table (transposed: task names as columns)
+        $table_html = '<table border="1" cellpadding="5" cellspacing="0" style="width:100%; max-width:100%; border-collapse:collapse; table-layout:auto;">' . "\n";
+        $table_html .= '<tbody>' . "\n";
+        
+        // Get unique task names for columns
+        $task_names = array_keys($task_summary);
+        $col_count = count($task_names);
+        
+        // Row 1: Task Names (as header row)
+        if (in_array('name', $show_options) || empty($show_options) || $col_count > 0) {
+            $table_html .= '<tr>' . "\n";
+            // First cell is label (if show_labels is true)
+            if ($show_labels) {
+                $table_html .= '<th style="text-align:left; padding:8px; background-color:#f8f9fa; font-weight:bold;">' . htmlspecialchars($labels[0]) . '</th>' . "\n";
+            }
+            // Then task names as columns
+            foreach ($task_names as $task_name) {
+                $table_html .= '<th style="text-align:center; padding:8px; background-color:#f8f9fa; font-weight:bold;">' . htmlspecialchars($task_name) . '</th>' . "\n";
+            }
+            $table_html .= '</tr>' . "\n";
+        }
+        
+        // Row 2: Count values
+        if (in_array('count', $show_options)) {
+            $table_html .= '<tr>' . "\n";
+            if ($show_labels) {
+                $table_html .= '<td style="text-align:left; padding:8px; background-color:#f0f0f0; font-weight:bold;">' . htmlspecialchars($labels[1]) . '</td>' . "\n";
+            }
+            foreach ($task_names as $task_name) {
+                $count = isset($task_summary[$task_name]) ? $task_summary[$task_name]['count'] : 0;
+                $table_html .= '<td style="text-align:center; padding:8px; font-weight:bold;">' . $count . '</td>' . "\n";
+            }
+            $table_html .= '</tr>' . "\n";
+        }
+        
+        // Row 3: Status values
+        if (in_array('status', $show_options)) {
+            $table_html .= '<tr>' . "\n";
+            if ($show_labels) {
+                $table_html .= '<td style="text-align:left; padding:8px; background-color:#f0f0f0; font-weight:bold;">' . htmlspecialchars($labels[2]) . '</td>' . "\n";
+            }
+            foreach ($task_names as $task_name) {
+                $status_display = 'N/A';
+                if (isset($task_summary[$task_name]) && !empty($task_summary[$task_name]['statuses'])) {
+                    $status_display = implode(', ', $task_summary[$task_name]['statuses']);
+                }
+                $table_html .= '<td style="text-align:center; padding:8px;">' . htmlspecialchars($status_display) . '</td>' . "\n";
+            }
+            $table_html .= '</tr>' . "\n";
+        }
+        
+        // If no tasks, show empty message
+        if (empty($task_names)) {
+            $table_html .= '<tr>' . "\n";
+            $colspan = $show_labels ? $col_count + 1 : $col_count;
+            $table_html .= '<td colspan="' . max(2, $colspan) . '" style="padding:8px; text-align:center; color:#999;">No tasks found</td>' . "\n";
+            $table_html .= '</tr>' . "\n";
+        }
+        
+        $table_html .= '</tbody>' . "\n";
+        $table_html .= '</table>';
+        
+        // Replace the placeholder - use exact string replacement to ensure correct match
+        $full_placeholder = '{{TaskCountLoop' . $params_str . '}}';
+        $html = str_replace($full_placeholder, $table_html, $html);
+    }
+    
+    // Also support legacy format #TaskCountLoop#
+    if (strpos($html, '#TaskCountLoop#') !== false) {
+        // Default: show all
+        $show_options = ['name', 'count', 'status'];
+        
+        // Group tasks by name and count them
+        $task_summary = [];
+        foreach ($task_loop_items as $task_item) {
+            $task_name = $task_item['task_name'];
+            if (!isset($task_summary[$task_name])) {
+                $task_summary[$task_name] = [
+                    'name' => $task_name,
+                    'count' => 0,
+                    'statuses' => []
+                ];
+            }
+            $task_summary[$task_name]['count']++;
+            $status = $task_item['task_status'];
+            if (!in_array($status, $task_summary[$task_name]['statuses'])) {
+                $task_summary[$task_name]['statuses'][] = $status;
+            }
+        }
+        
+        // Build horizontal table (transposed: task names as columns)
+        $table_html = '<table border="1" cellpadding="5" cellspacing="0" style="width:100%; max-width:100%; border-collapse:collapse; table-layout:auto;">' . "\n";
+        $table_html .= '<tbody>' . "\n";
+        
+        $task_names = array_keys($task_summary);
+        
+        // Row 1: Task Names
+        $table_html .= '<tr>' . "\n";
+        $table_html .= '<th style="text-align:left; padding:8px; background-color:#f8f9fa; font-weight:bold;">Task Name</th>' . "\n";
+        foreach ($task_names as $task_name) {
+            $table_html .= '<th style="text-align:center; padding:8px; background-color:#f8f9fa; font-weight:bold;">' . htmlspecialchars($task_name) . '</th>' . "\n";
+        }
+        $table_html .= '</tr>' . "\n";
+        
+        // Row 2: Count
+        $table_html .= '<tr>' . "\n";
+        $table_html .= '<td style="text-align:left; padding:8px; background-color:#f0f0f0; font-weight:bold;">Count</td>' . "\n";
+        foreach ($task_names as $task_name) {
+            $count = isset($task_summary[$task_name]) ? $task_summary[$task_name]['count'] : 0;
+            $table_html .= '<td style="text-align:center; padding:8px; font-weight:bold;">' . $count . '</td>' . "\n";
+        }
+        $table_html .= '</tr>' . "\n";
+        
+        // Row 3: Status
+        $table_html .= '<tr>' . "\n";
+        $table_html .= '<td style="text-align:left; padding:8px; background-color:#f0f0f0; font-weight:bold;">Status</td>' . "\n";
+        foreach ($task_names as $task_name) {
+            $status_display = 'N/A';
+            if (isset($task_summary[$task_name]) && !empty($task_summary[$task_name]['statuses'])) {
+                $status_display = implode(', ', $task_summary[$task_name]['statuses']);
+            }
+            $table_html .= '<td style="text-align:center; padding:8px;">' . htmlspecialchars($status_display) . '</td>' . "\n";
+        }
+        $table_html .= '</tr>' . "\n";
+        
+        if (empty($task_names)) {
+            $table_html .= '<tr>' . "\n";
+            $table_html .= '<td colspan="2" style="padding:8px; text-align:center; color:#999;">No tasks found</td>' . "\n";
+            $table_html .= '</tr>' . "\n";
+        }
+        
+        $table_html .= '</tbody>' . "\n";
+        $table_html .= '</table>';
+        
+        $html = str_replace('#TaskCountLoop#', $table_html, $html);
+    }
+    
+    // 9. Process Document Loop (support both {{loop_start}} and #loop_start# formats)
     $loop_patterns = [
         ['start' => '{{document_loop_start}}', 'end' => '{{document_loop_end}}'],
         ['start' => '#document_loop_start#', 'end' => '#document_loop_end#']
@@ -1007,7 +1428,7 @@ function generate_report_from_html($html_template, $case_id = null, $client_id =
         }
     }
     
-    // 9. Replace all placeholders (support both {{variable}} and #variable# formats)
+    // 10. Replace all placeholders (support both {{variable}} and #variable# formats)
     // Fields that may contain HTML and should not be escaped
     $html_fields = ['task_remarks', 'task_name', 'task_status'];
     
@@ -1021,7 +1442,7 @@ function generate_report_from_html($html_template, $case_id = null, $client_id =
         $html = str_replace('#' . $key . '#', $safe_value, $html);
     }
     
-    // 10. Replace system variables
+    // 11. Replace system variables
     $system_vars = [
         'current_date' => date('d-m-Y'),
         'report_date' => date('d-m-Y'),
@@ -1126,4 +1547,215 @@ function get_report_template_for_case($case_id, $template_type = 'STANDARD')
     }
     
     return null;
+}
+
+/**
+ * Get Task Status Display Name
+ * Maps database status to display status
+ * Flow: Pending -> Assigned -> Verified -> Reviewed -> Closed
+ * 
+ * @param string $db_status Database task status
+ * @param array $task_data Task data array (optional, for checking review_status)
+ * @return string Display status name
+ */
+function get_task_status_display($db_status, $task_data = []) {
+    $status = strtoupper($db_status ?? 'PENDING');
+    
+    // Map database status to display status
+    switch ($status) {
+        case 'PENDING':
+            return 'Pending';
+        case 'IN_PROGRESS':
+            return 'Assigned';
+        case 'VERIFICATION_COMPLETED':
+            return 'Verified';
+        case 'COMPLETED':
+            // Check if task has review_status to distinguish Reviewed vs Closed
+            if (isset($task_data['review_status']) && !empty($task_data['review_status'])) {
+                return 'Reviewed';
+            }
+            return 'Closed';
+        default:
+            return 'Pending';
+    }
+}
+
+/**
+ * Calculate Case Status Based on Tasks
+ * Case Status Logic:
+ * - PENDING: If all tasks are in Pending status
+ * - IN_PROGRESS: If any task is not Pending and not all tasks are Closed
+ * - CLOSED: If all tasks are Closed (COMPLETED)
+ * 
+ * @param array $tasks Array of tasks with 'db_status' or 'task_status' key
+ * @return string Case status (PENDING, IN_PROGRESS, or CLOSED)
+ */
+function calculate_case_status($tasks) {
+    if (empty($tasks)) {
+        return 'PENDING'; // No tasks = PENDING
+    }
+    
+    $all_pending = true;
+    $all_closed = true;
+    
+    foreach ($tasks as $task) {
+        $task_status = strtoupper($task['db_status'] ?? $task['task_status'] ?? 'PENDING');
+        
+        if ($task_status != 'PENDING') {
+            $all_pending = false;
+        }
+        
+        if ($task_status != 'COMPLETED') {
+            $all_closed = false;
+        }
+    }
+    
+    if ($all_pending) {
+        return 'PENDING';
+    }
+    
+    if ($all_closed) {
+        return 'CLOSED';
+    }
+    
+    return 'IN_PROGRESS'; // At least one task is not pending and not all are closed
+}
+
+/**
+ * Check if user can view task based on role
+ * 
+ * @param array $task Task data with assigned_to, task_status
+ * @param int $user_id Current user ID
+ * @param string $user_type Current user type (ADMIN, DEV, VERIFIER, REVIEWER, etc.)
+ * @return bool True if user can view the task
+ */
+function can_user_view_task($task, $user_id, $user_type) {
+    // Admin and DEV can view all tasks
+    if ($user_type == 'ADMIN' || $user_type == 'DEV') {
+        return true;
+    }
+    
+    // Verifier can view tasks assigned to them or pending tasks
+    if ($user_type == 'VERIFIER') {
+        $task_status = strtoupper($task['task_status'] ?? 'PENDING');
+        $assigned_to = $task['assigned_to'] ?? null;
+        
+        // Can view if assigned to them or if pending (not assigned yet)
+        if ($task_status == 'PENDING' || ($assigned_to && $assigned_to == $user_id)) {
+            return true;
+        }
+    }
+    
+    // Reviewer can view verified tasks and completed tasks
+    if ($user_type == 'REVIEWER') {
+        $task_status = strtoupper($task['task_status'] ?? 'PENDING');
+        if (in_array($task_status, ['VERIFICATION_COMPLETED', 'COMPLETED'])) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * Check if user can perform action on task based on role and status
+ * 
+ * @param array $task Task data
+ * @param string $action Action to perform (assign, verify, review, view)
+ * @param int $user_id Current user ID
+ * @param string $user_type Current user type
+ * @return bool True if user can perform the action
+ */
+function can_user_action_task($task, $action, $user_id, $user_type) {
+    $task_status = strtoupper($task['task_status'] ?? 'PENDING');
+    $assigned_to = $task['assigned_to'] ?? null;
+    
+    // Admin and DEV can do all actions
+    if ($user_type == 'ADMIN' || $user_type == 'DEV') {
+        return true;
+    }
+    
+    switch (strtolower($action)) {
+        case 'assign':
+            // Only admin/dev can assign, or verifier can self-assign pending tasks
+            if ($user_type == 'VERIFIER' && $task_status == 'PENDING') {
+                return true;
+            }
+            return false;
+            
+        case 'verify':
+            // Verifier can verify tasks assigned to them
+            if ($user_type == 'VERIFIER' && $assigned_to == $user_id && 
+                in_array($task_status, ['PENDING', 'IN_PROGRESS'])) {
+                return true;
+            }
+            return false;
+            
+        case 'review':
+            // Reviewer can review verified tasks
+            if ($user_type == 'REVIEWER' && $task_status == 'VERIFICATION_COMPLETED') {
+                return true;
+            }
+            return false;
+            
+        case 'view':
+            return can_user_view_task($task, $user_id, $user_type);
+            
+        default:
+            return false;
+    }
+}
+
+/**
+ * Check if user can view case based on role
+ * 
+ * @param array $case Case data
+ * @param int $user_id Current user ID
+ * @param string $user_type Current user type
+ * @return bool True if user can view the case
+ */
+function can_user_view_case($case, $user_id, $user_type) {
+    // Admin and DEV can view all cases
+    if ($user_type == 'ADMIN' || $user_type == 'DEV') {
+        return true;
+    }
+    
+    // Other roles: check if they have any visible tasks in the case
+    // This will be checked at the task level
+    return true; // Allow viewing case, but tasks will be filtered
+}
+
+/**
+ * Get task action URL based on status and user role
+ * 
+ * @param array $task Task data
+ * @param int $case_id Case ID
+ * @param string $user_type Current user type
+ * @return string URL for the action
+ */
+function get_task_action_url($task, $case_id, $user_type = '') {
+    $task_id = $task['id'] ?? 0;
+    $task_status = strtoupper($task['db_status'] ?? $task['task_status'] ?? 'PENDING');
+    
+    switch ($task_status) {
+        case 'PENDING':
+        case 'IN_PROGRESS':
+            return 'task_verifier_submit.php?case_task_id=' . $task_id;
+            
+        case 'VERIFICATION_COMPLETED':
+            return 'task_review.php?case_task_id=' . $task_id;
+            
+        case 'COMPLETED':
+            // Check if reviewed (has review_status)
+            $task_data = is_array($task['task_data'] ?? null) ? $task['task_data'] : 
+                        (is_string($task['task_data'] ?? null) ? json_decode($task['task_data'], true) : []);
+            
+            if (isset($task_data['review_status']) && !empty($task_data['review_status'])) {
+                return 'task_review.php?case_task_id=' . $task_id; // View review
+            }
+            return 'view_case.php?case_id=' . $case_id; // View case
+            
+        default:
+            return 'view_case.php?case_id=' . $case_id;
+    }
 }

@@ -44,7 +44,7 @@ if (!empty($case['case_info'])) {
 global $con;
 $table_exists = false;
 $existing_tasks = [];
-$task_stats = ['total' => 0, 'pending' => 0, 'in_progress' => 0, 'verification_completed' => 0, 'completed' => 0];
+$task_stats = ['total' => 0, 'pending' => 0, 'assigned' => 0, 'verified' => 0, 'reviewed' => 0, 'closed' => 0];
 
 $table_check = mysqli_query($con, "SHOW TABLES LIKE 'case_tasks'");
 if (mysqli_num_rows($table_check) > 0) {
@@ -54,13 +54,45 @@ if (mysqli_num_rows($table_check) > 0) {
         $existing_tasks = $tasks_result['data'];
         $task_stats['total'] = count($existing_tasks);
         
-        // Calculate task statistics
+        // Get current user info for role-based visibility
+        $current_user_id = $_SESSION['user_id'] ?? 0;
+        $current_user_type = $_SESSION['user_type'] ?? '';
+        
+        // Filter tasks based on role-based visibility
+        $filtered_tasks = [];
         foreach ($existing_tasks as $task) {
-            $status = $task['task_status'] ?? 'PENDING';
-            if ($status == 'PENDING') $task_stats['pending']++;
-            elseif ($status == 'IN_PROGRESS') $task_stats['in_progress']++;
-            elseif ($status == 'VERIFICATION_COMPLETED') $task_stats['verification_completed']++;
-            elseif ($status == 'COMPLETED') $task_stats['completed']++;
+            $task_for_check = [
+                'task_status' => $task['task_status'] ?? 'PENDING',
+                'assigned_to' => $task['assigned_to'] ?? null
+            ];
+            
+            if (can_user_view_task($task_for_check, $current_user_id, $current_user_type)) {
+                $filtered_tasks[] = $task;
+                
+                // Calculate task statistics using display status
+                $task_data_json = json_decode($task['task_data'] ?? '{}', true);
+                $display_status = get_task_status_display($task['task_status'] ?? 'PENDING', $task_data_json);
+                
+                if ($display_status == 'Pending') $task_stats['pending']++;
+                elseif ($display_status == 'Assigned') $task_stats['assigned']++;
+                elseif ($display_status == 'Verified') $task_stats['verified']++;
+                elseif ($display_status == 'Reviewed') $task_stats['reviewed']++;
+                elseif ($display_status == 'Closed') $task_stats['closed']++;
+            }
+        }
+        $existing_tasks = $filtered_tasks;
+        
+        // Recalculate case status based on filtered tasks
+        $case_tasks_for_status = [];
+        foreach ($existing_tasks as $task) {
+            $case_tasks_for_status[] = ['db_status' => $task['task_status'] ?? 'PENDING'];
+        }
+        $calculated_case_status = calculate_case_status($case_tasks_for_status);
+        
+        // Update case status if different
+        if (isset($case['case_status']) && $case['case_status'] != $calculated_case_status) {
+            // Optionally update case status in database
+            // update_data('cases', ['case_status' => $calculated_case_status], $case_id);
         }
     }
 }
@@ -70,7 +102,7 @@ $template_id = null;
 $template_name = null;
 $table_check_template = mysqli_query($con, "SHOW TABLES LIKE 'report_templates'");
 if ($table_check_template && mysqli_num_rows($table_check_template) > 0) {
-    // First try to get default template
+    // First try to get default template for this client
     $template_query = "SELECT id, template_name FROM report_templates 
                        WHERE client_id = '$client_id' 
                        AND status = 'ACTIVE' 
@@ -92,6 +124,19 @@ if ($table_check_template && mysqli_num_rows($table_check_template) > 0) {
             $template_row = mysqli_fetch_assoc($template_result);
             $template_id = $template_row['id'];
             $template_name = $template_row['template_name'];
+        } else {
+            // If no template for this client, try to get any active template (fallback)
+            // This allows generating reports even if client-specific template doesn't exist
+            $template_query = "SELECT id, template_name FROM report_templates 
+                               WHERE status = 'ACTIVE' 
+                               ORDER BY is_default DESC, id DESC 
+                               LIMIT 1";
+            $template_result = mysqli_query($con, $template_query);
+            if ($template_result && mysqli_num_rows($template_result) > 0) {
+                $template_row = mysqli_fetch_assoc($template_result);
+                $template_id = $template_row['id'];
+                $template_name = $template_row['template_name'];
+            }
         }
     }
 }
@@ -437,16 +482,24 @@ if (isset($_SESSION['error_message'])) {
                                 $task_name = $task_template['count'] > 0 ? $task_template['data']['task_name'] : 'Unknown Task';
                                 $task_type = $task_template['count'] > 0 ? $task_template['data']['task_type'] : '';
                                 $task_data = json_decode($task['task_data'] ?? '{}', true);
-                                $task_status = $task['task_status'] ?? 'PENDING';
+                                $task_status_db = $task['task_status'] ?? 'PENDING';
+                                $task_data_json = json_decode($task['task_data'] ?? '{}', true);
                                 
-                                $status_config = [
-                                    'PENDING' => ['color' => 'warning', 'icon' => 'clock'],
-                                    'IN_PROGRESS' => ['color' => 'info', 'icon' => 'spinner'],
-                                    'VERIFICATION_COMPLETED' => ['color' => 'primary', 'icon' => 'check-circle'],
-                                    'COMPLETED' => ['color' => 'success', 'icon' => 'check-double'],
-                                    'REJECTED' => ['color' => 'danger', 'icon' => 'times-circle']
+                                // Get display status
+                                $task_status_display = get_task_status_display($task_status_db, $task_data_json);
+                                
+                                // Map display status to badge config
+                                $display_status_config = [
+                                    'Pending' => ['color' => 'warning', 'icon' => 'clock'],
+                                    'Assigned' => ['color' => 'info', 'icon' => 'user-check'],
+                                    'Verified' => ['color' => 'primary', 'icon' => 'check-circle'],
+                                    'Reviewed' => ['color' => 'warning', 'icon' => 'clipboard-check'],
+                                    'Closed' => ['color' => 'success', 'icon' => 'check-double']
                                 ];
-                                $status_info = $status_config[$task_status] ?? ['color' => 'secondary', 'icon' => 'circle'];
+                                $status_info = $display_status_config[$task_status_display] ?? ['color' => 'secondary', 'icon' => 'circle'];
+                                
+                                // Keep original for workflow logic
+                                $task_status = $task_status_db;
                                 ?>
                                 <div class="accordion-item mb-2 border rounded">
                                     <h2 class="accordion-header" id="heading<?php echo $task['id']; ?>">
@@ -457,7 +510,7 @@ if (isset($_SESSION['error_message'])) {
                                                     <strong><?php echo htmlspecialchars($task_name); ?></strong>
                                                     <span class="badge bg-<?php echo $status_info['color']; ?> ms-2">
                                                         <i class="fas fa-<?php echo $status_info['icon']; ?> me-1"></i>
-                                                        <?php echo $task_status; ?>
+                                                        <?php echo $task_status_display; ?>
                                                     </span>
                                                     <span class="badge bg-secondary ms-1"><?php echo $task_type; ?></span>
                                                 </div>
@@ -523,15 +576,24 @@ if (isset($_SESSION['error_message'])) {
                                                         // VERIFICATION_COMPLETED: Show Review only
                                                         elseif ($current_status == 'VERIFICATION_COMPLETED'):
                                                         ?>
-                                                            <a href="task_review.php?case_task_id=<?php echo $task['id']; ?>" class="btn btn-sm btn-warning" title="Review Task">
-                                                                <i class="fas fa-clipboard-check me-1"></i> Review
-                                                            </a>
+                                                            <?php
+                                                            // Check if user can review
+                                                            $task_for_action = [
+                                                                'task_status' => $current_status,
+                                                                'assigned_to' => $task['assigned_to'] ?? null
+                                                            ];
+                                                            if (can_user_action_task($task_for_action, 'review', $_SESSION['user_id'] ?? 0, $_SESSION['user_type'] ?? '')):
+                                                            ?>
+                                                                <a href="task_review.php?case_task_id=<?php echo $task['id']; ?>" class="btn btn-sm btn-warning" title="Review Task">
+                                                                    <i class="fas fa-clipboard-check me-1"></i> Review
+                                                                </a>
+                                                            <?php endif; ?>
                                                         <?php
                                                         // COMPLETED: Show view only
                                                         elseif ($current_status == 'COMPLETED'):
                                                         ?>
                                                             <span class="badge bg-success fs-6 px-3 py-2">
-                                                                <i class="fas fa-check-circle me-1"></i> Completed
+                                                                <i class="fas fa-check-circle me-1"></i> <?php echo $task_status_display; ?>
                                                             </span>
                                                         <?php endif; ?>
                                                         
@@ -579,7 +641,7 @@ if (isset($_SESSION['error_message'])) {
                                             <!-- Verifier Remarks -->
                                             <?php
                                             $task_data_json = json_decode($task['task_data'] ?? '{}', true);
-                                            $show_verifier_remarks = ($task_status == 'VERIFICATION_COMPLETED' || $task_status == 'COMPLETED') && isset($task_data_json['verifier_remarks']) && !empty($task_data_json['verifier_remarks']);
+                                            $show_verifier_remarks = (in_array($task_status_db, ['VERIFICATION_COMPLETED', 'COMPLETED'])) && isset($task_data_json['verifier_remarks']) && !empty($task_data_json['verifier_remarks']);
                                             if ($show_verifier_remarks):
                                             ?>
                                                 <div class="mt-3 pt-3 border-top">
@@ -603,7 +665,7 @@ if (isset($_SESSION['error_message'])) {
                                             
                                             <!-- Review Status & Final Report -->
                                             <?php
-                                            $show_review = ($task_status == 'COMPLETED') && isset($task_data_json['review_status']) && !empty($task_data_json['review_status']);
+                                            $show_review = ($task_status_db == 'COMPLETED') && isset($task_data_json['review_status']) && !empty($task_data_json['review_status']);
                                             if ($show_review):
                                                 $review_status = $task_data_json['review_status'];
                                                 $review_remarks = $task_data_json['review_remarks'] ?? '';
