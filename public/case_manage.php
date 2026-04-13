@@ -39,17 +39,18 @@ if ($has_case_status) {
     // If case_status column doesn't exist, calculate from tasks
     if ($has_case_tasks) {
         // Calculate case status from tasks
+        // Logic: PENDING if all tasks are PENDING, COMPLETED if all tasks are COMPLETED (Reviewed), else IN_PROGRESS
         $stats_sql = "SELECT 
             COUNT(DISTINCT c.id) as total,
             SUM(CASE WHEN calc_status = 'PENDING' THEN 1 ELSE 0 END) as pending,
             SUM(CASE WHEN calc_status = 'IN_PROGRESS' THEN 1 ELSE 0 END) as in_progress,
-            SUM(CASE WHEN calc_status = 'CLOSED' THEN 1 ELSE 0 END) as closed
+            SUM(CASE WHEN calc_status = 'COMPLETED' THEN 1 ELSE 0 END) as closed
             FROM (
                 SELECT c.id,
                     CASE 
                         WHEN COUNT(ct.id) = 0 THEN 'PENDING'
                         WHEN SUM(CASE WHEN ct.task_status = 'PENDING' THEN 1 ELSE 0 END) = COUNT(ct.id) THEN 'PENDING'
-                        WHEN SUM(CASE WHEN ct.task_status = 'COMPLETED' THEN 1 ELSE 0 END) = COUNT(ct.id) THEN 'CLOSED'
+                        WHEN SUM(CASE WHEN ct.task_status = 'COMPLETED' THEN 1 ELSE 0 END) = COUNT(ct.id) THEN 'COMPLETED'
                         ELSE 'IN_PROGRESS'
                     END as calc_status
                 FROM cases c
@@ -363,11 +364,14 @@ if (isset($res['status']) && $res['status'] == 'error' && $case_count > 0) {
                                         // If case_status column doesn't exist, calculate from tasks
                                         if (!$has_case_status && $has_case_tasks) {
                                             $case_id = $row['id'];
-                                            $case_tasks_result = get_all('case_tasks', 'task_status', ['case_id' => $case_id, 'status' => 'ACTIVE']);
+                                            $case_tasks_result = get_all('case_tasks', 'task_status, task_data', ['case_id' => $case_id, 'status' => 'ACTIVE']);
                                             $case_tasks = [];
                                             if ($case_tasks_result['count'] > 0) {
                                                 foreach ($case_tasks_result['data'] as $t) {
-                                                    $case_tasks[] = ['db_status' => $t['task_status'] ?? 'PENDING'];
+                                                    $case_tasks[] = [
+                                                        'db_status' => $t['task_status'] ?? 'PENDING',
+                                                        'task_data' => $t['task_data'] ?? null
+                                                    ];
                                                 }
                                             }
                                             $case_status = calculate_case_status($case_tasks);
@@ -376,7 +380,7 @@ if (isset($res['status']) && $res['status'] == 'error' && $case_count > 0) {
                                         $status_config = [
                                             'PENDING' => ['color' => 'warning', 'icon' => 'clock'],
                                             'IN_PROGRESS' => ['color' => 'info', 'icon' => 'spinner'],
-                                            'CLOSED' => ['color' => 'success', 'icon' => 'check-circle']
+                                            'COMPLETED' => ['color' => 'success', 'icon' => 'check-circle']
                                         ];
                                         $status_info = $status_config[$case_status] ?? ['color' => 'secondary', 'icon' => 'circle'];
                                         ?>

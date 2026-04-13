@@ -80,7 +80,32 @@ if ($attachments_res && mysqli_num_rows($attachments_res) > 0) {
 // Get current review status and remarks
 $review_status = $task_data_json['review_status'] ?? '';
 $review_remarks = $task_data_json['review_remarks'] ?? '';
+
+// Replace status words in review remarks with client-defined status words
+if (!empty($review_remarks)) {
+    // Replace database status words with client status words in remarks
+    // Replace "Positive" with client's positive status word
+    $review_remarks = str_replace('Positive', $positive_status, $review_remarks);
+    $review_remarks = str_replace('positive', strtolower($positive_status), $review_remarks);
+    
+    // Replace "Negative" with client's negative status word
+    $review_remarks = str_replace('Negative', $negative_status, $review_remarks);
+    $review_remarks = str_replace('negative', strtolower($negative_status), $review_remarks);
+    
+    // Replace "CNV" with client's CNV status word
+    $review_remarks = str_replace('CNV', $cnv_status, $review_remarks);
+    $review_remarks = str_replace('cnv', strtolower($cnv_status), $review_remarks);
+    
+    // Also use case-insensitive replacement to catch all variations
+    $db_status_words = ['Positive', 'Negative', 'CNV'];
+    $client_status_words = [$positive_status, $negative_status, $cnv_status];
+    for ($i = 0; $i < count($db_status_words); $i++) {
+        $review_remarks = str_ireplace($db_status_words[$i], $client_status_words[$i], $review_remarks);
+    }
+}
 ?>
+<link rel="stylesheet" href="../system/css/json_table.css">
+<script src="../system/js/json_table.js"></script>
 
 <main class="content">
     <div class="container-fluid py-3">
@@ -115,8 +140,8 @@ $review_remarks = $task_data_json['review_remarks'] ?? '';
         <?php endif; ?>
 
         <div class="row">
-            <!-- Left Column: Review Information -->
-            <div class="col-lg-7 mb-3">
+            <!-- Left Column: Review Information (3/4 Screen) -->
+            <div class="col-lg-9 mb-3">
                 <!-- Task Details -->
                 <div class="card shadow-sm mb-3">
                     <div class="card-header bg-primary text-white py-2">
@@ -149,6 +174,14 @@ $review_remarks = $task_data_json['review_remarks'] ?? '';
                                     $badge_color = $status_badges[$status_display] ?? 'secondary';
                                     ?>
                                     <span class="badge bg-<?php echo $badge_color; ?>"><?php echo htmlspecialchars($status_display); ?></span>
+                                    <?php 
+                                    $task_type = $task_template_data['task_type'] ?? '';
+                                    if (strtoupper($task_type) == 'ITO' && stripos($task_name, 'Financial') !== false): 
+                                    ?>
+                                        <a href="financial_add.php?case_task_id=<?php echo $case_task_id; ?>" class="btn btn-sm btn-outline-info ms-2 py-0" style="font-size: 0.75rem;">
+                                            <i class="fas fa-file-invoice me-1"></i> Financial Entry
+                                        </a>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         </div>
@@ -167,13 +200,46 @@ $review_remarks = $task_data_json['review_remarks'] ?? '';
                                 <?php
                                 foreach ($task_meta_fields['data'] as $field) {
                                     $field_value = isset($task_data_json[$field['field_name']]) ? $task_data_json[$field['field_name']] : '';
+                                    $is_table = (is_array($field_value) || (is_string($field_value) && (strpos($field_value, '[{"section"') === 0 || strpos($field_value, '{"') === 0)));
                                     ?>
-                                    <div class="col-md-6 mb-3">
+                                    <div class="<?php echo $is_table ? 'col-12' : 'col-md-6'; ?> mb-3">
                                         <label class="form-label text-muted small mb-0">
                                             <?php echo htmlspecialchars($field['display_name'] ?? $field['field_name']); ?>
                                         </label>
                                         <div class="field-value p-2 bg-light border rounded">
-                                            <?php echo !empty($field_value) ? nl2br(htmlspecialchars($field_value)) : '<span class="text-muted fst-italic">Not filled</span>'; ?>
+                                            <?php if($is_table): ?>
+                                                <?php 
+                                                    $field_id = str_replace(' ', '_', $field['field_name']);
+                                                    // Ensure we have a clean array for JS
+                                                    $clean_data = is_array($field_value) ? $field_value : json_decode($field_value, true);
+                                                    if (!$clean_data) $clean_data = null;
+                                                ?>
+                                                <div id="json_table_container_<?php echo $field_id; ?>"></div>
+                                                <input type="hidden" name="task_meta[<?php echo $field['field_name']; ?>]" id="json_table_input_<?php echo $field_id; ?>" value="<?php echo htmlspecialchars(is_array($field_value) ? json_encode($field_value) : $field_value); ?>">
+                                                <script>
+                                                    (function() {
+                                                        const fieldId = <?php echo json_encode($field_id); ?>;
+                                                        const config = <?php echo !empty($field['default_value']) ? $field['default_value'] : '{}'; ?>;
+                                                        const existingData = <?php echo json_encode($clean_data); ?>;
+                                                        
+                                                        const initFunc = function() {
+                                                            if (typeof initJsonTable === 'function') {
+                                                                initJsonTable(fieldId, config, existingData);
+                                                            } else {
+                                                                setTimeout(initFunc, 100);
+                                                            }
+                                                        };
+                                                        
+                                                        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                                                            initFunc();
+                                                        } else {
+                                                            document.addEventListener('DOMContentLoaded', initFunc);
+                                                        }
+                                                    })();
+                                                </script>
+                                            <?php else: ?>
+                                                <?php echo render_financial_table_readonly($field_value); ?>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                     <?php
@@ -189,18 +255,23 @@ $review_remarks = $task_data_json['review_remarks'] ?? '';
                 </div>
 
                 <!-- Verifier Remarks -->
-                <?php if (!empty($verifier_remarks)): ?>
-                    <div class="card shadow-sm mb-3">
-                        <div class="card-header bg-light py-2">
-                            <h6 class="mb-0 fw-bold">
-                                <i class="fas fa-comment-alt text-success me-2"></i>Verifier Remarks
-                            </h6>
-                        </div>
-                        <div class="card-body">
-                            <p class="mb-0"><?php echo nl2br(htmlspecialchars($verifier_remarks)); ?></p>
-                        </div>
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0 fw-bold">
+                            <i class="fas fa-comment-alt text-success me-2"></i>Verifier Remarks
+                        </h6>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="pasteImageBtn" title="Paste Image from Clipboard">
+                            <i class="fas fa-paste me-1"></i> Paste Image
+                        </button>
                     </div>
-                <?php endif; ?>
+                    <div class="card-body">
+                        <?php if (!empty($verifier_remarks)): ?>
+                            <p class="mb-0"><?php echo nl2br(htmlspecialchars($verifier_remarks)); ?></p>
+                        <?php else: ?>
+                            <p class="text-muted mb-0"><em>No verifier remarks</em></p>
+                        <?php endif; ?>
+                    </div>
+                </div>
 
                 <!-- Review Form -->
                 <div class="card shadow-sm">
@@ -210,7 +281,7 @@ $review_remarks = $task_data_json['review_remarks'] ?? '';
                         </h6>
                     </div>
                     <div class="card-body">
-                        <form id="reviewForm" method="POST" action="save_task_review.php">
+                        <form id="reviewForm" method="POST" action=".php">
                             <input type="hidden" name="case_task_id" value="<?php echo $case_task_id; ?>">
                             <input type="hidden" name="case_id" value="<?php echo $case_id; ?>">
                             <input type="hidden" name="task_template_id" value="<?php echo $task_template_id; ?>">
@@ -246,8 +317,8 @@ $review_remarks = $task_data_json['review_remarks'] ?? '';
                 </div>
             </div>
 
-            <!-- Right Column: Attachments -->
-            <div class="col-lg-5 mb-3">
+            <!-- Right Column: Attachments (1/4 Screen) -->
+            <div class="col-lg-3 mb-3">
                 <div class="card shadow-sm">
                     <div class="card-header bg-light py-2">
                         <h6 class="mb-0 fw-bold">
@@ -301,13 +372,18 @@ $review_remarks = $task_data_json['review_remarks'] ?? '';
                                             </label>
                                         </div>
                                         <div class="d-flex gap-2">
+                                            <?php 
+                                            // Handle absolute URLs correctly
+                                            $is_external_att = (strpos($attachment['file_url'], 'http://') === 0 || strpos($attachment['file_url'], 'https://') === 0);
+                                            $full_att_url = $is_external_att ? $attachment['file_url'] : '../upload/' . $attachment['file_url'];
+                                            ?>
                                             <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewFile('<?php echo htmlspecialchars($attachment['file_url']); ?>', '<?php echo htmlspecialchars($attachment['file_name']); ?>', '<?php echo htmlspecialchars($attachment['file_type'] ?? ''); ?>')">
                                                 <i class="fas fa-eye me-1"></i>View
-                                            </button>
-                                            <a href="../upload/<?php echo htmlspecialchars($attachment['file_url']); ?>" target="_blank" class="btn btn-sm btn-outline-success" download>
-                                                <i class="fas fa-download me-1"></i>Download
-                                            </a>
-                                        </div>
+                                             </button>
+                                             <a href="<?php echo htmlspecialchars($full_att_url); ?>" target="_blank" class="btn btn-sm btn-outline-success" download>
+                                                 <i class="fas fa-download me-1"></i>Download
+                                             </a>
+                                         </div>
                                     </div>
                                 <?php endforeach; ?>
                             </div>
@@ -340,43 +416,229 @@ var taskTemplates = {
     'NEGATIVE': <?php echo json_encode($task_template_data['negative_format'] ?? ''); ?>,
     'CNV': <?php echo json_encode($task_template_data['cnv_format'] ?? ''); ?>
 };
+var taskType = <?php echo json_encode(strtoupper($task_template_data['task_type'] ?? '')); ?>;
+var caseTaskId = <?php echo $case_task_id; ?>;
+// Client-defined status words for #status# replacement
+var clientStatusWords = {
+    'POSITIVE': <?php echo json_encode($positive_status); ?>,
+    'NEGATIVE': <?php echo json_encode($negative_status); ?>,
+    'CNV': <?php echo json_encode($cnv_status); ?>
+};
 
 function generateRemarks() {
     var status = $('#review_status').val();
-    if (!status || !taskTemplates[status]) {
+    if (!status) {
         return;
     }
     
-    var template = taskTemplates[status];
-    var remarks = template;
-    
-    // Replace variables in template with actual values
-    for (var key in taskData) {
-        if (taskData.hasOwnProperty(key) && typeof taskData[key] === 'string') {
-            var regex = new RegExp('#' + key + '#', 'gi');
-            remarks = remarks.replace(regex, taskData[key]);
+    // For PHYSICAL task types, use AI generation
+    if (taskType === 'PHYSICAL') {
+        generateAIRemarks(status);
+    } else {
+        // For other task types, use template replacement
+        if (!taskTemplates[status]) {
+            return;
         }
+        
+        var template = taskTemplates[status];
+        var remarks = template;
+        
+        // Replace #status# FIRST with client-defined status word based on selected review status
+        // This must be done before the loop to prevent taskData.status from overriding it
+        var statusWord = clientStatusWords[status] || taskData.status || '';
+        remarks = remarks.replace(/#status#/gi, statusWord);
+        
+        // Replace variables in template with actual values (skip 'status' as it's already handled)
+        for (var key in taskData) {
+            if (taskData.hasOwnProperty(key) && typeof taskData[key] === 'string' && key !== 'status') {
+                var regex = new RegExp('#' + key + '#', 'gi');
+                remarks = remarks.replace(regex, taskData[key]);
+            }
+        }
+        
+        // Replace common variables
+        remarks = remarks.replace(/#applicant_name#/gi, taskData.applicant_name || '');
+        remarks = remarks.replace(/#address#/gi, taskData.address || '');
+        remarks = remarks.replace(/#met_with#/gi, taskData.met_with || '');
+        remarks = remarks.replace(/#time_period#/gi, taskData.time_period || '');
+        remarks = remarks.replace(/#ownership#/gi, taskData.ownership || '');
+        remarks = remarks.replace(/#family#/gi, taskData.family || '');
+        remarks = remarks.replace(/#area#/gi, taskData.area || '');
+        remarks = remarks.replace(/#locality#/gi, taskData.locality || '');
+        remarks = remarks.replace(/#tpc#/gi, taskData.tpc || '');
+        remarks = remarks.replace(/#data#/gi, taskData.data || '');
+        
+        // Replace any hardcoded status words (Positive, Negative, CNV) with client status words
+        // This handles cases where the template has "Status - Positive" instead of "Status - #status#"
+        // Only replace the status word that matches the selected review status
+        if (statusWord) {
+            var dbStatusMap = {
+                'POSITIVE': 'Positive',
+                'NEGATIVE': 'Negative',
+                'CNV': 'CNV'
+            };
+            var dbStatusWord = dbStatusMap[status];
+            if (dbStatusWord && dbStatusWord !== statusWord) {
+                // Use word boundary regex to avoid partial replacements (e.g., "Positive" in "Positively")
+                var regex = new RegExp('\\b' + dbStatusWord + '\\b', 'gi');
+                remarks = remarks.replace(regex, statusWord);
+            }
+        }
+        
+        // Also replace all status words if they appear in the template (for comprehensive coverage)
+        // This ensures any hardcoded status words are replaced with client words
+        remarks = remarks.replace(/\bPositive\b/gi, clientStatusWords['POSITIVE'] || 'Positive');
+        remarks = remarks.replace(/\bNegative\b/gi, clientStatusWords['NEGATIVE'] || 'Negative');
+        remarks = remarks.replace(/\bCNV\b/gi, clientStatusWords['CNV'] || 'CNV');
+        
+        $('#review_remarks').val(remarks);
     }
+}
+
+function generateAIRemarks(status) {
+    // Show loading state
+    var remarksTextarea = $('#review_remarks');
+    var originalValue = remarksTextarea.val();
+    remarksTextarea.prop('disabled', true).val('Generating AI remarks... Please wait...');
     
-    // Replace common variables
-    remarks = remarks.replace(/#applicant_name#/gi, taskData.applicant_name || '');
-    remarks = remarks.replace(/#address#/gi, taskData.address || '');
-    remarks = remarks.replace(/#met_with#/gi, taskData.met_with || '');
-    remarks = remarks.replace(/#time_period#/gi, taskData.time_period || '');
-    remarks = remarks.replace(/#ownership#/gi, taskData.ownership || '');
-    remarks = remarks.replace(/#family#/gi, taskData.family || '');
-    remarks = remarks.replace(/#area#/gi, taskData.area || '');
-    remarks = remarks.replace(/#locality#/gi, taskData.locality || '');
-    remarks = remarks.replace(/#tpc#/gi, taskData.tpc || '');
-    remarks = remarks.replace(/#data#/gi, taskData.data || '');
-    
-    $('#review_remarks').val(remarks);
+    $.ajax({
+        url: 'save_task_review.php',
+        type: 'POST',
+        data: {
+            action: 'generate_ai_remarks',
+            case_task_id: caseTaskId,
+            review_status: status
+        },
+        dataType: 'json',
+        success: function(response) {
+            remarksTextarea.prop('disabled', false);
+            
+            if (response.success && response.remarks) {
+                var aiRemarks = response.remarks;
+                
+                // Replace any hardcoded status words (Positive, Negative, CNV) with client status words
+                // This handles cases where AI-generated remarks contain database status words
+                var statusWord = clientStatusWords[status] || '';
+                if (statusWord) {
+                    // Replace database status words with client status words
+                    aiRemarks = aiRemarks.replace(/\bPositive\b/gi, clientStatusWords['POSITIVE'] || 'Positive');
+                    aiRemarks = aiRemarks.replace(/\bNegative\b/gi, clientStatusWords['NEGATIVE'] || 'Negative');
+                    aiRemarks = aiRemarks.replace(/\bCNV\b/gi, clientStatusWords['CNV'] || 'CNV');
+                    
+                    // Also replace the specific status word for the selected status
+                    var dbStatusMap = {
+                        'POSITIVE': 'Positive',
+                        'NEGATIVE': 'Negative',
+                        'CNV': 'CNV'
+                    };
+                    var dbStatusWord = dbStatusMap[status];
+                    if (dbStatusWord && dbStatusWord !== statusWord) {
+                        var regex = new RegExp('\\b' + dbStatusWord + '\\b', 'gi');
+                        aiRemarks = aiRemarks.replace(regex, statusWord);
+                    }
+                }
+                
+                remarksTextarea.val(aiRemarks);
+            } else {
+                remarksTextarea.val(originalValue);
+                alert('Error: ' + (response.message || 'Failed to generate AI remarks. Please try again.'));
+            }
+        },
+        error: function(xhr, status, error) {
+            remarksTextarea.prop('disabled', false).val(originalValue);
+            console.error('Error:', error, xhr.responseText);
+            alert('Error generating AI remarks. Please try again.');
+        }
+    });
 }
 
 // Select all attachments checkbox
 $('#selectAllAttachments').change(function() {
     $('.attachment-checkbox').prop('checked', $(this).prop('checked'));
 });
+
+// Paste Image from Clipboard
+$('#pasteImageBtn').on('click', function() {
+    // Create a temporary input element to capture paste
+    var pasteArea = $('<textarea>').css({
+        position: 'fixed',
+        left: '-9999px',
+        top: '0px'
+    }).appendTo('body').focus();
+    
+    // Listen for paste event
+    $(document).one('paste', function(e) {
+        e.preventDefault();
+        var clipboardData = e.originalEvent.clipboardData || window.clipboardData;
+        var items = clipboardData.items;
+        
+        for (var i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                var blob = items[i].getAsFile();
+                var reader = new FileReader();
+                
+                reader.onload = function(event) {
+                    var imageData = event.target.result;
+                    uploadPastedImage(imageData);
+                };
+                
+                reader.readAsDataURL(blob);
+                break;
+            }
+        }
+        
+        pasteArea.remove();
+    });
+    
+    // Show instruction
+    alert('Press Ctrl+V (or Cmd+V on Mac) to paste an image from your clipboard.');
+});
+
+function uploadPastedImage(imageData) {
+    // Convert data URL to blob
+    var blob = dataURLtoBlob(imageData);
+    var formData = new FormData();
+    formData.append('action', 'paste_image');
+    formData.append('case_task_id', <?php echo $case_task_id; ?>);
+    formData.append('case_id', <?php echo $case_id; ?>);
+    formData.append('image', blob, 'pasted_image_' + Date.now() + '.png');
+    
+    // Show loading
+    $('#pasteImageBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Uploading...');
+    
+    $.ajax({
+        url: 'save_task_review.php',
+        type: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        dataType: 'json',
+        success: function(response) {
+            $('#pasteImageBtn').prop('disabled', false).html('<i class="fas fa-paste me-1"></i> Paste Image');
+            
+            if (response.success) {
+                alert('Image pasted and attached successfully!');
+                location.reload();
+            } else {
+                alert('Error: ' + (response.message || 'Failed to upload image'));
+            }
+        },
+        error: function(xhr, status, error) {
+            $('#pasteImageBtn').prop('disabled', false).html('<i class="fas fa-paste me-1"></i> Paste Image');
+            console.error('Error:', error, xhr.responseText);
+            alert('Error uploading image. Please try again.');
+        }
+    });
+}
+
+function dataURLtoBlob(dataurl) {
+    var arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
+        bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
+    while(n--){
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], {type:mime});
+}
 
 $(document).ready(function() {
     $('#reviewForm').on('submit', function(e) {
@@ -407,8 +669,12 @@ $(document).ready(function() {
                 submitBtn.prop('disabled', false).html(originalBtnHtml);
                 
                 if (response.success) {
-                    alert(response.message || 'Review saved successfully!');
-                    location.reload();
+                    // Auto-redirect after successful save
+                    if (response.redirect) {
+                        window.location.href = response.redirect;
+                    } else {
+                        window.location.href = 'view_case.php?case_id=<?php echo $case_id; ?>';
+                    }
                 } else {
                     alert('Error: ' + (response.message || 'Failed to save review'));
                 }

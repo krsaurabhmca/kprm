@@ -1265,6 +1265,18 @@ function send_mail($to, $subject, $msg, $att_arr='', $name='')
    global $inst_email;
    global $noreply_email;
    global $inst_email_password;
+   global $user_id;
+   
+   // Log message as pending
+   $msg_id = log_message(
+       $subject,
+       $msg,
+       null, // to_user - can be set if user_id is known
+       'Email',
+       $to,
+       'pending'
+   );
+   
    $mail = new PHPMailer;
    $mail->isSMTP();
    $mail->SMTPDebug = 0;// 2 for debug
@@ -1284,9 +1296,18 @@ function send_mail($to, $subject, $msg, $att_arr='', $name='')
             $mail->addAttachment($att);
        }
    if (!$mail->send()) {
+       // Update status if logging was successful
+       if ($msg_id) {
+           // Keep as pending on failure, or you could add a 'failed' status
+           update_message_status($msg_id, 'pending');
+       }
        echo 'Mailer Error: ' . $mail->ErrorInfo;
        return false;
    } else {
+       // Update status to sent on success
+       if ($msg_id) {
+           update_message_status($msg_id, 'sent');
+       }
        return true;
    }
 }
@@ -1422,6 +1443,71 @@ function get_bal_sms()
 	return $data;
 }
 
+/**
+ * Log message to op_msg table
+ * @param string $title Message title
+ * @param string $message Message content
+ * @param int $to_user User ID (optional)
+ * @param string $send_via SMS/WhatsApp/Email
+ * @param string $send_on Mobile/Email/WhatsApp number
+ * @param string $status pending/sent/delivered
+ * @return int|false Message ID or false on failure
+ */
+function log_message($title, $message, $to_user = null, $send_via = 'SMS', $send_on = '', $status = 'pending') {
+    global $con;
+    global $user_id;
+    
+    if (!$con) {
+        return false;
+    }
+    
+    $msg_data = [
+        'title' => $title,
+        'message' => $message,
+        'to_user' => $to_user,
+        'send_via' => $send_via,
+        'send_on' => $send_on,
+        'status' => $status,
+        'created_at' => date('Y-m-d H:i:s'),
+        'created_by' => $user_id ?? null,
+        'updated_at' => date('Y-m-d H:i:s'),
+        'updated_by' => $user_id ?? null
+    ];
+    
+    $result = insert_data('op_msg', $msg_data);
+    
+    if ($result['status'] == 'success' && isset($result['id'])) {
+        return $result['id'];
+    }
+    
+    return false;
+}
+
+/**
+ * Update message status in op_msg table
+ * @param int $msg_id Message ID
+ * @param string $status pending/sent/delivered
+ * @return bool Success status
+ */
+function update_message_status($msg_id, $status) {
+    global $con;
+    global $user_id;
+    
+    if (!$con || !$msg_id) {
+        return false;
+    }
+    
+    $update_data = [
+        'status' => $status,
+        'updated_at' => date('Y-m-d H:i:s'),
+        'updated_by' => $user_id ?? null
+    ];
+    
+    $result = update_data('op_msg', $update_data, $msg_id);
+    
+    return ($result['status'] == 'success');
+}
+
 function send_msg($number,$sms,$templateid)
 		{
 			$res =null;
@@ -1433,6 +1519,19 @@ function send_msg($number,$sms,$templateid)
 			global $auth_key;
 			global $current_date_time;
 			$ctype ="English";
+			
+			// Clean mobile number
+			$clean_num = preg_replace('/[^0-9]/', '', $num);
+			
+			// Log message as pending
+			$msg_id = log_message(
+				'SMS Notification',
+				$sms,
+				null, // to_user - can be set if user_id is known
+				'SMS',
+				$clean_num,
+				'pending'
+			);
 			
 			$no ='91'.urlencode($num);
 			$msg = substr(urlencode($sms),0,2000);
@@ -1446,6 +1545,16 @@ function send_msg($number,$sms,$templateid)
 	    	$res= curl_exec($ch);
 	    	$data =json_decode($res, true);
 	    	curl_close($ch);
+	    	
+	    	// Update message status based on API response
+	    	if ($msg_id) {
+	    		if (isset($data['type']) && $data['type'] == 'success') {
+	    			update_message_status($msg_id, 'sent');
+	    		} else {
+	    			// Keep as pending if failed, or mark as sent if response is unclear
+	    			update_message_status($msg_id, 'sent'); // Most SMS APIs don't provide delivery status
+	    		}
+	    	}
 			}
 			return $res;
 		}	

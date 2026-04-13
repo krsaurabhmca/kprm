@@ -30,6 +30,10 @@ $client_id = $case['client_id'];
 $client_info = get_data('clients', $client_id);
 $client_name = $client_info['count'] > 0 ? $client_info['data']['name'] : 'Unknown Client';
 $client_email = $client_info['count'] > 0 ? ($client_info['data']['email'] ?? '') : '';
+$client_data = $client_info['count'] > 0 ? $client_info['data'] : [];
+$positive_status = $client_data['positve_status'] ?? 'Positive';
+$negative_status = $client_data['negative_status'] ?? 'Negative';
+$cnv_status = $client_data['cnv_status'] ?? 'CNV';
 
 // Parse case_info JSON
 $case_info_data = [];
@@ -73,11 +77,11 @@ if (mysqli_num_rows($table_check) > 0) {
                 $task_data_json = json_decode($task['task_data'] ?? '{}', true);
                 $display_status = get_task_status_display($task['task_status'] ?? 'PENDING', $task_data_json);
                 
-                if ($display_status == 'Pending') $task_stats['pending']++;
+                if ($display_status == 'Fresh Case') $task_stats['pending']++;
                 elseif ($display_status == 'Assigned') $task_stats['assigned']++;
                 elseif ($display_status == 'Verified') $task_stats['verified']++;
                 elseif ($display_status == 'Reviewed') $task_stats['reviewed']++;
-                elseif ($display_status == 'Closed') $task_stats['closed']++;
+                // Note: Closed status is no longer used, all COMPLETED tasks are Reviewed
             }
         }
         $existing_tasks = $filtered_tasks;
@@ -85,7 +89,10 @@ if (mysqli_num_rows($table_check) > 0) {
         // Recalculate case status based on filtered tasks
         $case_tasks_for_status = [];
         foreach ($existing_tasks as $task) {
-            $case_tasks_for_status[] = ['db_status' => $task['task_status'] ?? 'PENDING'];
+            $case_tasks_for_status[] = [
+                'db_status' => $task['task_status'] ?? 'PENDING',
+                'task_data' => $task['task_data'] ?? null
+            ];
         }
         $calculated_case_status = calculate_case_status($case_tasks_for_status);
         
@@ -97,14 +104,15 @@ if (mysqli_num_rows($table_check) > 0) {
     }
 }
 
-// Get template for this client (for report generation)
+// Get REPORT template for this client (for report generation)
 $template_id = null;
 $template_name = null;
 $table_check_template = mysqli_query($con, "SHOW TABLES LIKE 'report_templates'");
 if ($table_check_template && mysqli_num_rows($table_check_template) > 0) {
-    // First try to get default template for this client
+    // First try to get default REPORT template for this client
     $template_query = "SELECT id, template_name FROM report_templates 
                        WHERE client_id = '$client_id' 
+                       AND template_type = 'REPORT'
                        AND status = 'ACTIVE' 
                        AND is_default = 'YES' 
                        LIMIT 1";
@@ -114,9 +122,10 @@ if ($table_check_template && mysqli_num_rows($table_check_template) > 0) {
         $template_id = $template_row['id'];
         $template_name = $template_row['template_name'];
     } else {
-        // If no default, get first active template for this client
+        // If no default, get first active REPORT template for this client
         $template_query = "SELECT id, template_name FROM report_templates 
                            WHERE client_id = '$client_id' 
+                           AND template_type = 'REPORT'
                            AND status = 'ACTIVE' 
                            LIMIT 1";
         $template_result = mysqli_query($con, $template_query);
@@ -125,10 +134,11 @@ if ($table_check_template && mysqli_num_rows($table_check_template) > 0) {
             $template_id = $template_row['id'];
             $template_name = $template_row['template_name'];
         } else {
-            // If no template for this client, try to get any active template (fallback)
+            // If no REPORT template for this client, try to get any active REPORT template (fallback)
             // This allows generating reports even if client-specific template doesn't exist
             $template_query = "SELECT id, template_name FROM report_templates 
-                               WHERE status = 'ACTIVE' 
+                               WHERE template_type = 'REPORT'
+                               AND status = 'ACTIVE' 
                                ORDER BY is_default DESC, id DESC 
                                LIMIT 1";
             $template_result = mysqli_query($con, $template_query);
@@ -166,11 +176,13 @@ if (isset($_SESSION['error_message'])) {
                 <i class="fas fa-folder-open text-primary me-2"></i>
                 Case #<?php echo $case_id; ?>
                 <?php 
-                $case_status = $case['case_status'] ?? 'ACTIVE';
+                // Use calculated case status if available, otherwise use database value
+                $case_status = isset($calculated_case_status) ? $calculated_case_status : ($case['case_status'] ?? 'PENDING');
                 $status_config = [
-                    'ACTIVE' => ['color' => 'success', 'icon' => 'check-circle'],
                     'PENDING' => ['color' => 'warning', 'icon' => 'clock'],
-                    'COMPLETED' => ['color' => 'info', 'icon' => 'check-double'],
+                    'IN_PROGRESS' => ['color' => 'info', 'icon' => 'spinner'],
+                    'COMPLETED' => ['color' => 'success', 'icon' => 'check-circle'],
+                    'ACTIVE' => ['color' => 'success', 'icon' => 'check-circle'],
                     'ON_HOLD' => ['color' => 'secondary', 'icon' => 'pause']
                 ];
                 $status_info = $status_config[$case_status] ?? ['color' => 'secondary', 'icon' => 'circle'];
@@ -232,7 +244,7 @@ if (isset($_SESSION['error_message'])) {
                 <div class="card-body p-3">
                     <div class="d-flex align-items-center">
                         <div class="flex-grow-1">
-                            <div class="text-muted small mb-1">Pending</div>
+                            <div class="text-muted small mb-1">Fresh Case</div>
                             <div class="h5 mb-0 fw-bold text-warning"><?php echo $task_stats['pending']; ?></div>
                         </div>
                         <div class="text-warning">
@@ -247,8 +259,8 @@ if (isset($_SESSION['error_message'])) {
                 <div class="card-body p-3">
                     <div class="d-flex align-items-center">
                         <div class="flex-grow-1">
-                            <div class="text-muted small mb-1">In Progress</div>
-                            <div class="h5 mb-0 fw-bold text-info"><?php echo $task_stats['in_progress']; ?></div>
+                            <div class="text-muted small mb-1">Assigned</div>
+                            <div class="h5 mb-0 fw-bold text-info"><?php echo $task_stats['assigned']; ?></div>
                         </div>
                         <div class="text-info">
                             <i class="fas fa-spinner fa-2x opacity-50"></i>
@@ -262,8 +274,8 @@ if (isset($_SESSION['error_message'])) {
                 <div class="card-body p-3">
                     <div class="d-flex align-items-center">
                         <div class="flex-grow-1">
-                            <div class="text-muted small mb-1">Verification Done</div>
-                            <div class="h5 mb-0 fw-bold text-primary"><?php echo $task_stats['verification_completed']; ?></div>
+                            <div class="text-muted small mb-1">Verified</div>
+                            <div class="h5 mb-0 fw-bold text-primary"><?php echo $task_stats['verified']; ?></div>
                         </div>
                         <div class="text-primary">
                             <i class="fas fa-check-circle fa-2x opacity-50"></i>
@@ -277,8 +289,8 @@ if (isset($_SESSION['error_message'])) {
                 <div class="card-body p-3">
                     <div class="d-flex align-items-center">
                         <div class="flex-grow-1">
-                            <div class="text-muted small mb-1">Completed</div>
-                            <div class="h5 mb-0 fw-bold text-success"><?php echo $task_stats['completed']; ?></div>
+                            <div class="text-muted small mb-1">Reviewed</div>
+                            <div class="h5 mb-0 fw-bold text-success"><?php echo $task_stats['reviewed']; ?></div>
                         </div>
                         <div class="text-success">
                             <i class="fas fa-check-double fa-2x opacity-50"></i>
@@ -490,11 +502,10 @@ if (isset($_SESSION['error_message'])) {
                                 
                                 // Map display status to badge config
                                 $display_status_config = [
-                                    'Pending' => ['color' => 'warning', 'icon' => 'clock'],
+                                    'Fresh Case' => ['color' => 'warning', 'icon' => 'clock'],
                                     'Assigned' => ['color' => 'info', 'icon' => 'user-check'],
                                     'Verified' => ['color' => 'primary', 'icon' => 'check-circle'],
-                                    'Reviewed' => ['color' => 'warning', 'icon' => 'clipboard-check'],
-                                    'Closed' => ['color' => 'success', 'icon' => 'check-double']
+                                    'Reviewed' => ['color' => 'success', 'icon' => 'clipboard-check']
                                 ];
                                 $status_info = $display_status_config[$task_status_display] ?? ['color' => 'secondary', 'icon' => 'circle'];
                                 
@@ -596,15 +607,37 @@ if (isset($_SESSION['error_message'])) {
                                                                 <i class="fas fa-check-circle me-1"></i> <?php echo $task_status_display; ?>
                                                             </span>
                                                         <?php endif; ?>
-                                                        
                                                         <!-- Always show Edit and Delete for ADMIN/DEV -->
                                                         <?php if ($_SESSION['user_type'] == 'ADMIN' || $_SESSION['user_type'] == 'DEV'): ?>
-                                                            <a href="edit_case_task.php?case_task_id=<?php echo $task['id']; ?>&task_id=<?php echo $task['task_template_id']; ?>" class="btn btn-sm btn-primary" title="Edit Task">
+                                                            <button type="button" class="btn btn-sm btn-primary" onclick="openEditTaskModal(<?php echo $task['id']; ?>, <?php echo $task['task_template_id']; ?>)" title="Edit Task">
                                                                 <i class="fas fa-edit me-1"></i> Edit
-                                                            </a>
+                                                            </button>
                                                             <button type="button" class="btn btn-sm btn-danger" onclick="deleteTask(<?php echo $task['id']; ?>)" title="Delete Task">
                                                                 <i class="fas fa-trash me-1"></i> Delete
                                                             </button>
+
+                                                            <!-- Manual Stage Override -->
+                                                            <div class="dropdown d-inline-block">
+                                                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                                                    <i class="fas fa-layer-group me-1"></i> Stage Override
+                                                                </button>
+                                                                <ul class="dropdown-menu dropdown-menu-end shadow-lg" style="border-radius: 8px; border: none; font-size: 0.85rem; z-index: 1060;">
+                                                                    <li><h6 class="dropdown-header text-primary fw-bold"><i class="fas fa-tools me-1"></i> Manual Stage Override</h6></li>
+                                                                    <li><hr class="dropdown-divider"></li>
+                                                                    <li><a class="dropdown-item <?php echo $task_status_db == 'PENDING' ? 'active disabled' : ''; ?>" href="javascript:void(0)" onclick="changeTaskStage(<?php echo $task['id']; ?>, 'PENDING')">
+                                                                        <i class="fas fa-clock text-warning me-2"></i> Set as Fresh Case
+                                                                    </a></li>
+                                                                    <li><a class="dropdown-item <?php echo $task_status_db == 'IN_PROGRESS' ? 'active disabled' : ''; ?>" href="javascript:void(0)" onclick="changeTaskStage(<?php echo $task['id']; ?>, 'IN_PROGRESS')">
+                                                                        <i class="fas fa-user-check text-info me-2"></i> Set as Assigned
+                                                                    </a></li>
+                                                                    <li><a class="dropdown-item <?php echo $task_status_db == 'VERIFICATION_COMPLETED' ? 'active disabled' : ''; ?>" href="javascript:void(0)" onclick="changeTaskStage(<?php echo $task['id']; ?>, 'VERIFICATION_COMPLETED')">
+                                                                        <i class="fas fa-check-circle text-primary me-2"></i> Set as Verified
+                                                                    </a></li>
+                                                                    <li><a class="dropdown-item <?php echo $task_status_db == 'COMPLETED' ? 'active disabled' : ''; ?>" href="javascript:void(0)" onclick="changeTaskStage(<?php echo $task['id']; ?>, 'COMPLETED')">
+                                                                        <i class="fas fa-clipboard-check text-success me-2"></i> Set as Reviewed
+                                                                    </a></li>
+                                                                </ul>
+                                                            </div>
                                                         <?php endif; ?>
                                                     </div>
                                                 </div>
@@ -612,27 +645,36 @@ if (isset($_SESSION['error_message'])) {
                                             
                                             <!-- Task Fields Display -->
                                             <div class="mt-3 pt-3 border-top">
-                                                <h6 class="mb-2 text-muted small">
-                                                    <i class="fas fa-list-ul me-1"></i> Task Details
+                                                <h6 class="mb-3 text-muted small fw-bold">
+                                                    <i class="fas fa-list-ul me-1"></i> Data Points
                                                 </h6>
-                                                <div class="row">
+                                                <div class="row g-3">
                                                     <?php
                                                     // Get task meta fields
                                                     $task_meta_fields = get_all('tasks_meta', '*', ['task_id' => $task['task_template_id'], 'status' => 'ACTIVE'], 'id ASC');
                                                     if ($task_meta_fields['count'] > 0) {
                                                         foreach ($task_meta_fields['data'] as $field) {
                                                             $field_value = isset($task_data[$field['field_name']]) ? $task_data[$field['field_name']] : '';
+                                                            $is_table = (is_array($field_value) || (is_string($field_value) && (strpos($field_value, '[{"section"') === 0 || strpos($field_value, '{"') === 0)));
                                                             ?>
-                                                            <div class="col-md-6 mb-2">
-                                                                <label class="form-label text-muted small mb-0"><?php echo htmlspecialchars($field['display_name']); ?></label>
-                                                                <div class="field-value p-1 bg-white border rounded small">
-                                                                    <?php echo !empty($field_value) ? htmlspecialchars($field_value) : '<span class="text-muted fst-italic">Not filled</span>'; ?>
+                                                            <div class="<?php echo $is_table ? 'col-12' : 'col-md-6 col-lg-4'; ?>">
+                                                                <div class="<?php echo $is_table ? '' : 'field-group'; ?>">
+                                                                    <div class="info-label"><?php echo htmlspecialchars($field['display_name']); ?></div>
+                                                                     <div class="field-value">
+                                                                        <?php 
+                                                                        if ($is_table) {
+                                                                            echo render_financial_table_readonly($field_value);
+                                                                        } else {
+                                                                            echo !empty($field_value) ? '<span class="fw-bold">' . htmlspecialchars($field_value) . '</span>' : '<span class="text-muted fst-italic">N/A</span>';
+                                                                        }
+                                                                        ?>
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                             <?php
                                                         }
                                                     } else {
-                                                        echo '<div class="col-12"><p class="text-muted small text-center py-2"><i class="fas fa-info-circle me-1"></i>No fields configured for this task.</p></div>';
+                                                        echo '<div class="col-12"><p class="text-muted small text-center py-2 bg-white border rounded"><i class="fas fa-info-circle me-1"></i>No fields configured for this task.</p></div>';
                                                     }
                                                     ?>
                                                 </div>
@@ -669,6 +711,54 @@ if (isset($_SESSION['error_message'])) {
                                             if ($show_review):
                                                 $review_status = $task_data_json['review_status'];
                                                 $review_remarks = $task_data_json['review_remarks'] ?? '';
+                                                
+                                                // Replace status words in review remarks with client-defined status words
+                                                if (!empty($review_remarks)) {
+                                                    // Get client status word based on review status
+                                                    $client_status_word = '';
+                                                    if ($review_status == 'POSITIVE') {
+                                                        $client_status_word = $positive_status;
+                                                    } elseif ($review_status == 'NEGATIVE') {
+                                                        $client_status_word = $negative_status;
+                                                    } elseif ($review_status == 'CNV') {
+                                                        $client_status_word = $cnv_status;
+                                                    }
+                                                    
+                                                    // Replace database status words with client status words in remarks
+                                                    // Replace "Positive" with client's positive status word
+                                                    $review_remarks = str_replace('Positive', $positive_status, $review_remarks);
+                                                    $review_remarks = str_replace('positive', strtolower($positive_status), $review_remarks);
+                                                    
+                                                    // Replace "Negative" with client's negative status word
+                                                    $review_remarks = str_replace('Negative', $negative_status, $review_remarks);
+                                                    $review_remarks = str_replace('negative', strtolower($negative_status), $review_remarks);
+                                                    
+                                                    // Replace "CNV" with client's CNV status word
+                                                    $review_remarks = str_replace('CNV', $cnv_status, $review_remarks);
+                                                    $review_remarks = str_replace('cnv', strtolower($cnv_status), $review_remarks);
+                                                    
+                                                    // Also replace the specific status word if it appears
+                                                    if (!empty($client_status_word)) {
+                                                        // Replace any remaining occurrences of the database status word
+                                                        $db_status_words = ['Positive', 'Negative', 'CNV'];
+                                                        $client_status_words = [$positive_status, $negative_status, $cnv_status];
+                                                        for ($i = 0; $i < count($db_status_words); $i++) {
+                                                            $review_remarks = str_ireplace($db_status_words[$i], $client_status_words[$i], $review_remarks);
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                // Get display status word for badge
+                                                $review_status_display = '';
+                                                if ($review_status == 'POSITIVE') {
+                                                    $review_status_display = $positive_status;
+                                                } elseif ($review_status == 'NEGATIVE') {
+                                                    $review_status_display = $negative_status;
+                                                } elseif ($review_status == 'CNV') {
+                                                    $review_status_display = $cnv_status;
+                                                } else {
+                                                    $review_status_display = $review_status;
+                                                }
                                             ?>
                                                 <div class="mt-3 pt-3 border-top">
                                                     <div class="card border-warning">
@@ -684,7 +774,7 @@ if (isset($_SESSION['error_message'])) {
                                                                     <span class="badge bg-<?php 
                                                                         echo $review_status == 'POSITIVE' ? 'success' : ($review_status == 'NEGATIVE' ? 'danger' : 'warning');
                                                                     ?>">
-                                                                        <?php echo htmlspecialchars($review_status); ?>
+                                                                        <?php echo htmlspecialchars($review_status_display); ?>
                                                                     </span>
                                                                 </div>
                                                                 <div class="col-md-6">
@@ -695,11 +785,23 @@ if (isset($_SESSION['error_message'])) {
                                                                 </div>
                                                             </div>
                                                             <?php if (!empty($review_remarks)): ?>
-                                                                <div class="alert alert-light border small mb-0">
+                                                                <div class="alert alert-light border small mb-3">
                                                                     <strong>Final Report:</strong>
                                                                     <p class="mb-0 mt-2"><?php echo nl2br(htmlspecialchars($review_remarks)); ?></p>
                                                                 </div>
                                                             <?php endif; ?>
+                                                            
+                                                            <?php 
+                                                            // Check if there is a financial table to preview in review card
+                                                            foreach ($task_data_json as $key => $val) {
+                                                                if (is_array($val) || (is_string($val) && (strpos($val, '[{"section"') === 0 || strpos($val, '{"') === 0))) {
+                                                                    echo '<div class="mt-3">';
+                                                                    echo '<h6 class="small fw-bold text-primary mb-2"><i class="fas fa-table me-1"></i> Financial Data Comparison:</h6>';
+                                                                    echo render_financial_table_readonly($val);
+                                                                    echo '</div>';
+                                                                }
+                                                            }
+                                                            ?>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -798,15 +900,50 @@ if (isset($_SESSION['error_message'])) {
             <div class="modal-body">
                 <div id="assignError" class="alert alert-danger" style="display:none;"></div>
                 <div class="mb-3">
-                    <label class="form-label"><strong>Select Verifier</strong></label>
+                    <label class="form-label"><strong>Select Field Verifier</strong></label>
                     <select id="assignVerifierSelect" class="form-select">
                         <option value="">Loading verifiers...</option>
                     </select>
+                </div>
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="sendWhatsAppCheck" checked>
+                        <label class="form-check-label" for="sendWhatsAppCheck">
+                            <i class="fab fa-whatsapp text-success me-1"></i> Send WhatsApp notification with task details
+                        </label>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-primary" id="confirmAssignBtn">Assign</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Task Edit Modal -->
+<div class="modal fade" id="editTaskModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content shadow-lg">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-edit me-2"></i> Edit Task Details
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div id="modalLoading" class="text-center py-5" style="display:none;">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-2">Loading task data...</p>
+            </div>
+            <div class="modal-body" id="editTaskModalBody">
+                <!-- Data loaded via AJAX -->
+            </div>
+            <div class="modal-footer bg-light">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary px-4" id="saveTaskBtn" onclick="submitAjaxEditTask()">
+                    <i class="fas fa-save me-1"></i> Update Task
+                </button>
             </div>
         </div>
     </div>
@@ -862,6 +999,7 @@ function assignTask(taskId, currentVerifierId) {
 $(document).ready(function() {
     $('#confirmAssignBtn').off('click').on('click', function() {
         var verifierId = $('#assignVerifierSelect').val();
+        var sendWhatsApp = $('#sendWhatsAppCheck').is(':checked') ? 1 : 0;
         
         if (verifierId === '') {
             $('#assignError').text('Please select a verifier or choose "Not Assigned"').show();
@@ -877,13 +1015,23 @@ $(document).ready(function() {
             data: {
                 action: 'assign_task',
                 case_task_id: assignCurrentTaskId,
-                verifier_id: verifierId
+                verifier_id: verifierId,
+                send_whatsapp: sendWhatsApp
             },
             dataType: 'json',
             success: function(response) {
                 if (response.success) {
                     $('#assignTaskModal').modal('hide');
-                    alert(response.message || 'Task assigned successfully!');
+                    var message = response.message || 'Task assigned successfully!';
+                    
+                    // If WhatsApp URL is provided, show option to open it
+                    if (response.whatsapp_url) {
+                        if (confirm(message + '\n\nOpen WhatsApp to send message?')) {
+                            window.open(response.whatsapp_url, '_blank');
+                        }
+                    } else {
+                        alert(message);
+                    }
                     location.reload();
                 } else {
                     $('#assignError').text(response.message || 'Failed to assign task').show();
@@ -948,12 +1096,135 @@ function previewFile(fileUrl, fileName, fileType) {
         alert('Please allow popups for this site to view files.');
     }
 }
+
+    // Task Edit Modal Functionality
+    function openEditTaskModal(caseTaskId, taskId) {
+        var modal = new bootstrap.Modal(document.getElementById('editTaskModal'));
+        var body = document.getElementById('editTaskModalBody');
+        var loading = document.getElementById('modalLoading');
+        
+        body.innerHTML = '';
+        loading.style.display = 'block';
+        modal.show();
+        
+        $.ajax({
+            url: 'ajax_get_edit_task_form.php',
+            type: 'GET',
+            data: {
+                case_task_id: caseTaskId,
+                task_id: taskId
+            },
+            success: function(html) {
+                loading.style.display = 'none';
+                body.innerHTML = html;
+            },
+            error: function() {
+                loading.style.display = 'none';
+                body.innerHTML = '<div class="alert alert-danger">Failed to load edit form.</div>';
+            }
+        });
+    }
+
+    // Submit AJAX Edit Task
+    function submitAjaxEditTask() {
+        var form = document.getElementById('ajaxEditTaskForm');
+        if (!form) return;
+        
+        var formData = new FormData(form);
+        var saveBtn = document.getElementById('saveTaskBtn');
+        var originalText = saveBtn.innerHTML;
+        var errorDiv = document.getElementById('ajaxFormError');
+        var successDiv = document.getElementById('ajaxFormSuccess');
+        
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Saving...';
+        
+        $.ajax({
+            url: 'save_case_step.php',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            dataType: 'json',
+            success: function(response) {
+                if (response.success) {
+                    successDiv.innerHTML = '<i class="fas fa-check-circle me-1"></i> ' + (response.message || 'Task updated successfully!');
+                    successDiv.style.display = 'block';
+                    errorDiv.style.display = 'none';
+                    
+                    setTimeout(function() {
+                        location.reload();
+                    }, 1000);
+                } else {
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = originalText;
+                    errorDiv.innerHTML = '<i class="fas fa-exclamation-circle me-1"></i> ' + (response.message || 'Error updating task.');
+                    errorDiv.style.display = 'block';
+                }
+            },
+            error: function() {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = originalText;
+                errorDiv.innerHTML = '<i class="fas fa-exclamation-circle me-1"></i> Connection error.';
+                errorDiv.style.display = 'block';
+            }
+        });
+    }
+
+    // Existing functions...
+    // Change Task Stage (Admin/Dev only)
+    function changeTaskStage(taskId, newStage) {
+        if (!confirm('Are you sure you want to manually change this task\'s stage? This will override the standard workflow.')) {
+            return;
+        }
+
+        $.ajax({
+            url: 'ajax_update_task_stage.php',
+            type: 'POST',
+            data: {
+                task_id: taskId,
+                new_stage: newStage
+            },
+            dataType: 'json',
+            success: function(response) {
+                if (response.success) {
+                    location.reload();
+                } else {
+                    alert('Error: ' + response.message);
+                }
+            },
+            error: function() {
+                alert('Connection error. Failed to update stage.');
+            }
+        });
+    }
 </script>
 
 <style>
+.field-group {
+    padding: 10px;
+    background: #fdfdfd;
+    border: 1px solid #efefef;
+    border-radius: 5px;
+    height: 100%;
+}
+.field-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #666;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+}
 .field-value {
-    min-height: 28px;
-    word-break: break-word;
     font-size: 13px;
+    color: #333;
+    min-height: 20px;
+}
+.accordion-button:not(.collapsed) {
+    background-color: #f8f9fa;
+    color: #000;
+}
+.dropdown-menu-override {
+    z-index: 9999 !important;
 }
 </style>

@@ -16,42 +16,26 @@ if (isset($_GET['task'])) {
 		}
 		$adata['date_time'] = $current_date_time;
 		$adata['user_id']   = $_SESSION['user_id']?? $_POST['user_name']??0;
-		$adata['date_time'] = $current_date_time;
 		$adata['task_name'] = $task;
 		$adata['status']    =	'ACTIVE';
 		$adata['request_data'] = json_encode($_POST);
 		$adata['ip_address'] = get_ip();
-		//print_r($adata);
-		// SQL Query with prepared statement
-        // $sql = "INSERT INTO activity_log (`status`, `created_at`, `created_by`, 
-        //         `user_id`, `date_time`, `task_name`, `request_data`, `ip_address`) 
-        //         VALUES (?, NOW(), ?, ?, ?, ?, ?, ?)";
-        
-        // // Prepare bind execute
-        // $stmt = mysqli_prepare($con, $sql);
-        
-        // if (!$stmt) {
-        //     die("SQL Error: " . mysqli_error($con));
-        // }
-        
-        // // Bind Parameters
-        // $created_by = $adata['user_id']; // If created_by = user_id
-        // mysqli_stmt_bind_param($stmt, "siissss",
-        //     $adata['status'],
-        //     $created_by,
-        //     $adata['user_id'],
-        //     $adata['date_time'],
-        //     $adata['task_name'],
-        //     $adata['request_data'],
-        //     $adata['ip_address']
-        // );
-        
-        // // Execute
-        // if (!mysqli_stmt_execute($stmt)) {
-        //     echo "Insert Error: " . mysqli_stmt_error($stmt);
-        // }
-        
-        // mysqli_stmt_close($stmt);
+		
+		// Insert activity log using insert_data function
+		global $con;
+		if (isset($con) && $con) {
+			try {
+				$log_result = insert_data('activity_log', $adata);
+				// Log insertion errors silently to avoid breaking the main process
+				if ($log_result['status'] != 'success') {
+					// Optionally log to file if needed
+					// create_log('Activity log insert failed: ' . ($log_result['msg'] ?? 'Unknown error'));
+				}
+			} catch (Exception $e) {
+				// Silently handle errors to not break main functionality
+				// create_log('Activity log exception: ' . $e->getMessage());
+			}
+		}
 	}
 	switch ($task) {
 
@@ -780,6 +764,126 @@ if (isset($_GET['task'])) {
 			$res['url'] = 'add_user';
 			$notice  = "User Info of {$_POST['user_name']} updated  by {$_SESSION['user_name']}";
 			create_log($notice);
+			echo json_encode($res);
+			break;
+
+		case "save_user_clients": // Save user's allowed clients
+			extract($_POST);
+			if ($_SESSION['user_type'] == 'ADMIN' || $_SESSION['user_type'] == 'DEV') {
+				global $con;
+				
+				// First, mark all existing as DELETED
+				$update_query = "UPDATE user_clients SET status = 'DELETED', updated_by = '{$_SESSION['user_id']}', updated_at = NOW() WHERE user_id = '$user_id'";
+				mysqli_query($con, $update_query);
+				
+				// Insert new selections
+				if (isset($client_ids) && is_array($client_ids) && count($client_ids) > 0) {
+					foreach ($client_ids as $client_id) {
+						$client_id = intval($client_id);
+						if ($client_id > 0) {
+							// Check if exists
+							$check_query = "SELECT id FROM user_clients WHERE user_id = '$user_id' AND client_id = '$client_id'";
+							$check_result = mysqli_query($con, $check_query);
+							
+							if ($check_result && mysqli_num_rows($check_result) > 0) {
+								// Update existing
+								$update_existing = "UPDATE user_clients SET status = 'ACTIVE', updated_by = '{$_SESSION['user_id']}', updated_at = NOW() WHERE user_id = '$user_id' AND client_id = '$client_id'";
+								mysqli_query($con, $update_existing);
+							} else {
+								// Insert new
+								$insert_data = [
+									'user_id' => $user_id,
+									'client_id' => $client_id,
+									'status' => 'ACTIVE',
+									'created_by' => $_SESSION['user_id'],
+									'created_at' => date('Y-m-d H:i:s')
+								];
+								insert_data('user_clients', $insert_data);
+							}
+						}
+					}
+				}
+				
+				$res['status'] = 'success';
+				$res['msg'] = 'Client permissions saved successfully';
+			} else {
+				$res['status'] = 'error';
+				$res['msg'] = 'Access denied';
+			}
+			echo json_encode($res);
+			break;
+
+		case "save_user_tasks": // Save user's allowed tasks
+			extract($_POST);
+			if ($_SESSION['user_type'] == 'ADMIN' || $_SESSION['user_type'] == 'DEV') {
+				global $con;
+				
+				// First, mark all existing as DELETED
+				$update_query = "UPDATE user_tasks SET status = 'DELETED', updated_by = '{$_SESSION['user_id']}', updated_at = NOW() WHERE user_id = '$user_id'";
+				mysqli_query($con, $update_query);
+				
+				// Insert new selections
+				if (isset($task_ids) && is_array($task_ids) && count($task_ids) > 0) {
+					foreach ($task_ids as $task_id) {
+						$task_id = intval($task_id);
+						if ($task_id > 0) {
+							// Check if exists
+							$check_query = "SELECT id FROM user_tasks WHERE user_id = '$user_id' AND task_id = '$task_id'";
+							$check_result = mysqli_query($con, $check_query);
+							
+							if ($check_result && mysqli_num_rows($check_result) > 0) {
+								// Update existing
+								$update_existing = "UPDATE user_tasks SET status = 'ACTIVE', updated_by = '{$_SESSION['user_id']}', updated_at = NOW() WHERE user_id = '$user_id' AND task_id = '$task_id'";
+								mysqli_query($con, $update_existing);
+							} else {
+								// Insert new
+								$insert_data = [
+									'user_id' => $user_id,
+									'task_id' => $task_id,
+									'status' => 'ACTIVE',
+									'created_by' => $_SESSION['user_id'],
+									'created_at' => date('Y-m-d H:i:s')
+								];
+								insert_data('user_tasks', $insert_data);
+							}
+						}
+					}
+				}
+				
+				$res['status'] = 'success';
+				$res['msg'] = 'Task permissions saved successfully';
+			} else {
+				$res['status'] = 'error';
+				$res['msg'] = 'Access denied';
+			}
+			echo json_encode($res);
+			break;
+
+		case "change_user_password": // Change password by admin
+			extract($_POST);
+			if ($_SESSION['user_type'] == 'ADMIN' || $_SESSION['user_type'] == 'DEV') {
+				$new_password = md5($new_password);
+				$update_data = ['user_pass' => $new_password];
+				$res = update_data('op_user', $update_data, $user_id);
+				$res['msg'] = 'Password changed successfully';
+			} else {
+				$res['status'] = 'error';
+				$res['msg'] = 'Access denied';
+			}
+			echo json_encode($res);
+			break;
+
+		case "update_user_status": // Activate/Block user account
+			extract($_POST);
+			if ($_SESSION['user_type'] == 'ADMIN' || $_SESSION['user_type'] == 'DEV') {
+				$update_data = ['user_status' => $user_status];
+				$res = update_data('op_user', $update_data, $user_id);
+				$status_text = $user_status == 'ACTIVE' ? 'activated' : 'blocked';
+				$res['msg'] = "User account $status_text successfully";
+			} else {
+				$res['status'] = 'error';
+				$res['msg'] = 'Access denied';
+			}
 			echo json_encode($res);
 			break;
 

@@ -52,8 +52,14 @@
 
 					<?php $x = create_menu();
 					
-					print_r($x);
+					echo $x;
 					?>
+
+					<li class="sidebar-item">
+						<a href="<?= $base_url?>public/mis_report.php" class="sidebar-link">
+							<i class="align-middle" data-feather="bar-chart-2"></i> <span class="align-middle">MIS Report</span>
+						</a>
+					</li>
 
 				
 				<?php if(strtoupper($user_type) =='DEV') { ?>

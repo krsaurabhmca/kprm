@@ -166,11 +166,10 @@ if ($selected_client_id > 0) {
             
             // Prepare tasks grouped by display status
             $tasks_by_status = [
-                'Pending' => [],
+                'Fresh Case' => [],
                 'Assigned' => [],
                 'Verified' => [],
-                'Reviewed' => [],
-                'Closed' => []
+                'Reviewed' => []
             ];
             
             foreach ($tasks as $task) {
@@ -179,7 +178,7 @@ if ($selected_client_id > 0) {
                 
                 // Ensure status exists in array
                 if (!isset($tasks_by_status[$display_status])) {
-                    $display_status = 'Pending'; // Fallback
+                    $display_status = 'Fresh Case'; // Fallback
                 }
                 $tasks_by_status[$display_status][] = $task;
             }
@@ -226,6 +225,12 @@ if ($selected_client_id > 0) {
         max-height: 400px;
         overflow-y: auto;
     }
+    td
+    {
+        word-wrap: none;
+        overflow-wrap: none;
+        white-space: nowrap;
+    }
 </style>
 
 <main class="content">
@@ -264,8 +269,8 @@ if ($selected_client_id > 0) {
                             Case Created
                         </label></li>
                         <li><label class="dropdown-item column-toggle">
-                            <input type="checkbox" class="form-check-input me-2 column-toggle-checkbox" data-column="col-task-pending" checked>
-                            Pending Tasks
+                            <input type="checkbox" class="form-check-input me-2 column-toggle-checkbox" data-column="col-task-fresh-case" checked>
+                            Fresh Case Tasks
                         </label></li>
                         <li><label class="dropdown-item column-toggle">
                             <input type="checkbox" class="form-check-input me-2 column-toggle-checkbox" data-column="col-task-assigned" checked>
@@ -279,10 +284,6 @@ if ($selected_client_id > 0) {
                             <input type="checkbox" class="form-check-input me-2 column-toggle-checkbox" data-column="col-task-reviewed" checked>
                             Reviewed Tasks
                         </label></li>
-                        <li><label class="dropdown-item column-toggle">
-                            <input type="checkbox" class="form-check-input me-2 column-toggle-checkbox" data-column="col-task-closed" checked>
-                            Closed Tasks
-                        </label></li>
                         <?php foreach ($client_meta_fields as $field_name => $display_name): ?>
                         <li><label class="dropdown-item column-toggle">
                             <input type="checkbox" class="form-check-input me-2 column-toggle-checkbox" data-column="col-meta-<?php echo htmlspecialchars($field_name); ?>" checked>
@@ -295,8 +296,8 @@ if ($selected_client_id > 0) {
                     <select name="case_status" id="caseStatusSelect" class="form-select form-select-sm" style="min-width: 150px;" <?php echo $selected_client_id == 0 ? 'disabled' : ''; ?>>
                         <option value="ALL" <?php echo $selected_case_status == 'ALL' ? 'selected' : ''; ?>>All Cases</option>
                         <option value="PENDING" <?php echo $selected_case_status == 'PENDING' ? 'selected' : ''; ?>>Pending</option>
-                        <option value="IN_PROGRESS" <?php echo $selected_case_status == 'IN_PROGRESS' ? 'selected' : ''; ?>>In Progress</option>
-                        <option value="CLOSED" <?php echo $selected_case_status == 'CLOSED' ? 'selected' : ''; ?>>Closed</option>
+                        <option value="IN_PROGRESS" <?php echo $selected_case_status == 'IN_PROGRESS' ? 'selected' : ''; ?>>In Process</option>
+                        <option value="COMPLETED" <?php echo $selected_case_status == 'COMPLETED' ? 'selected' : ''; ?>>Completed</option>
                     </select>
                     <input type="hidden" name="client_id" id="filterClientId" value="<?php echo $selected_client_id; ?>">
                     <button type="submit" class="btn btn-sm btn-primary" <?php echo $selected_client_id == 0 ? 'disabled' : ''; ?>>
@@ -403,11 +404,10 @@ if ($selected_client_id > 0) {
                                         <th class="col-application-no">Application No</th>
                                         <th class="col-case-status">Case Status</th>
                                         <th class="col-case-created">Case Created</th>
-                                        <th class="col-task-pending">Pending</th>
-                                        <th class="col-task-assigned">Assigned</th>
-                                        <th class="col-task-verified">Verified</th>
-                                        <th class="col-task-reviewed">Reviewed</th>
-                                        <th class="col-task-closed">Closed</th>
+                                        <th class="col-task-fresh-case">Fresh Case Tasks</th>
+                                        <th class="col-task-assigned">Assigned Tasks</th>
+                                        <th class="col-task-verified">Verified Tasks</th>
+                                        <th class="col-task-reviewed">Reviewed Tasks</th>
                                         <?php foreach ($client_meta_fields as $field_name => $display_name): ?>
                                             <th class="col-meta-<?php echo htmlspecialchars($field_name); ?>"><?php echo htmlspecialchars($display_name); ?></th>
                                         <?php endforeach; ?>
@@ -448,10 +448,10 @@ if ($selected_client_id > 0) {
                                             </td>
                                             <?php
                                             // Display tasks in respective status columns
-                                            $task_status_columns = ['Pending', 'Assigned', 'Verified', 'Reviewed', 'Closed'];
+                                            $task_status_columns = ['Fresh Case', 'Assigned', 'Verified', 'Reviewed'];
                                             foreach ($task_status_columns as $status_col):
                                                 $tasks_in_status = $case_data['tasks_by_status'][$status_col] ?? [];
-                                                $column_class = 'col-task-' . strtolower($status_col);
+                                                $column_class = 'col-task-' . strtolower(str_replace(' ', '-', $status_col));
                                             ?>
                                                 <td class="<?php echo $column_class; ?>">
                                                     <?php if (count($tasks_in_status) > 0): ?>
@@ -473,11 +473,10 @@ if ($selected_client_id > 0) {
                                                             
                                                             // Badge color based on status
                                                             $badge_colors = [
-                                                                'Pending' => 'secondary',
+                                                                'Fresh Case' => 'warning',
                                                                 'Assigned' => 'info',
                                                                 'Verified' => 'primary',
-                                                                'Reviewed' => 'warning',
-                                                                'Closed' => 'success'
+                                                                'Reviewed' => 'success'
                                                             ];
                                                             $badge_color = $badge_colors[$status_col] ?? 'secondary';
                                                             ?>

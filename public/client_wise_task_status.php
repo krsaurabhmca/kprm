@@ -105,6 +105,7 @@ if ($selected_client_id > 0) {
                 ct.case_id,
                 ct.task_status,
                 ct.task_name,
+                ct.task_data,
                 ct.assigned_to,
                 ct.created_at,
                 ct.verified_at,
@@ -174,14 +175,14 @@ if ($verifiers_res) {
                 <li class="nav-item" role="presentation">
                     <button class="nav-link <?php echo $selected_status == 'PENDING' ? 'active' : ''; ?>" 
                             onclick="window.location.href='?client_id=<?php echo $selected_client_id; ?>&status=PENDING'">
-                        <i class="fas fa-clock me-1"></i>Pending
+                        <i class="fas fa-clock me-1"></i>Fresh Case
                         <span class="badge bg-warning ms-2"><?php echo $task_counts['PENDING']; ?></span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link <?php echo $selected_status == 'IN_PROGRESS' ? 'active' : ''; ?>" 
                             onclick="window.location.href='?client_id=<?php echo $selected_client_id; ?>&status=IN_PROGRESS'">
-                        <i class="fas fa-spinner me-1"></i>In Progress
+                        <i class="fas fa-user-check me-1"></i>Assigned
                         <span class="badge bg-info ms-2"><?php echo $task_counts['IN_PROGRESS']; ?></span>
                     </button>
                 </li>
@@ -195,7 +196,7 @@ if ($verifiers_res) {
                 <li class="nav-item" role="presentation">
                     <button class="nav-link <?php echo $selected_status == 'COMPLETED' ? 'active' : ''; ?>" 
                             onclick="window.location.href='?client_id=<?php echo $selected_client_id; ?>&status=COMPLETED'">
-                        <i class="fas fa-clipboard-check me-1"></i>Completed
+                        <i class="fas fa-clipboard-check me-1"></i>Reviewed
                         <span class="badge bg-success ms-2"><?php echo $task_counts['COMPLETED']; ?></span>
                     </button>
                 </li>
@@ -233,11 +234,18 @@ if ($verifiers_res) {
                                 <tbody>
                                     <?php foreach ($tasks as $index => $task): ?>
                                         <?php
-                                        $task_status = $task['task_status'] ?? 'PENDING';
+                                        $task_status_db = $task['task_status'] ?? 'PENDING';
+                                        $task_data_json = json_decode($task['task_data'] ?? '{}', true);
+                                        
+                                        // Get display status using helper function
+                                        $task_status_display = get_task_status_display($task_status_db, $task_data_json);
+                                        
+                                        // Map display status to badge color
                                         $status_class = 'warning';
-                                        if ($task_status == 'COMPLETED') $status_class = 'success';
-                                        elseif ($task_status == 'VERIFICATION_COMPLETED') $status_class = 'primary';
-                                        elseif ($task_status == 'IN_PROGRESS') $status_class = 'info';
+                                        if ($task_status_display == 'Reviewed') $status_class = 'success';
+                                        elseif ($task_status_display == 'Verified') $status_class = 'primary';
+                                        elseif ($task_status_display == 'Assigned') $status_class = 'info';
+                                        elseif ($task_status_display == 'Fresh Case') $status_class = 'warning';
                                         
                                         $assigned_name = '';
                                         if (!empty($task['assigned_to']) && isset($verifiers[$task['assigned_to']])) {
@@ -254,7 +262,7 @@ if ($verifiers_res) {
                                             </td>
                                             <td>
                                                 <span class="badge bg-<?php echo $status_class; ?>">
-                                                    <?php echo htmlspecialchars($task_status); ?>
+                                                    <?php echo htmlspecialchars($task_status_display); ?>
                                                 </span>
                                             </td>
                                             <td>
@@ -274,21 +282,21 @@ if ($verifiers_res) {
                                                         <i class="fas fa-eye"></i>
                                                     </a>
                                                     
-                                                    <?php if ($task_status == 'IN_PROGRESS' || $task_status == 'VERIFICATION_COMPLETED'): ?>
+                                                    <?php if ($task_status_db == 'IN_PROGRESS' || $task_status_db == 'VERIFICATION_COMPLETED'): ?>
                                                         <a href="task_verifier_submit.php?case_task_id=<?php echo $task['id']; ?>" 
                                                            class="btn btn-sm btn-outline-info" title="Verify">
                                                             <i class="fas fa-check"></i>
                                                         </a>
                                                     <?php endif; ?>
                                                     
-                                                    <?php if ($task_status == 'VERIFICATION_COMPLETED'): ?>
+                                                    <?php if ($task_status_db == 'VERIFICATION_COMPLETED'): ?>
                                                         <a href="task_review.php?case_task_id=<?php echo $task['id']; ?>" 
                                                            class="btn btn-sm btn-outline-warning" title="Review">
                                                             <i class="fas fa-clipboard-check"></i>
                                                         </a>
                                                     <?php endif; ?>
                                                     
-                                                    <?php if ($task_status == 'COMPLETED'): ?>
+                                                    <?php if ($task_status_db == 'COMPLETED'): ?>
                                                         <a href="task_review.php?case_task_id=<?php echo $task['id']; ?>" 
                                                            class="btn btn-sm btn-outline-success" title="View Review">
                                                             <i class="fas fa-eye"></i>

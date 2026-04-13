@@ -132,20 +132,16 @@ if (isset($task_data_json['verifier_remarks'])) {
                             </div>
 
                             <div class="d-flex gap-2">
-    <button type="submit" class="btn btn-primary btn-md" id="submitBtn">
-        <i class="fas fa-save me-1"></i>Upload
-    </button>
+                                <button type="submit" class="btn btn-primary btn-md" id="submitBtn">
+                                    <i class="fas fa-save me-1"></i>Upload
+                                </button>
 
-    <?php if ($current_status == 'IN_PROGRESS' && $is_assigned): ?>
-        <button type="button" class="btn btn-success" id="completeVerificationBtn">
-            <i class="fas fa-check-circle me-1"></i>Complete Verification
-        </button>
-    <?php elseif ($current_status == 'VERIFICATION_COMPLETED'): ?>
-        <div class="alert alert-success mb-0 py-2 px-3 d-flex align-items-center">
-            <i class="fas fa-check-circle me-2"></i>Verification Completed
-        </div>
-    <?php endif; ?>
-</div>
+                                <?php if ($current_status == 'VERIFICATION_COMPLETED'): ?>
+                                    <div class="alert alert-success mb-0 py-2 px-3 d-flex align-items-center">
+                                        <i class="fas fa-check-circle me-2"></i>Verification Completed
+                                    </div>
+                                <?php endif; ?>
+                            </div>
 
                         </form>
                     </div>
@@ -238,8 +234,9 @@ $(document).ready(function() {
                 submitBtn.prop('disabled', false).html(originalBtnHtml);
                 
                 if (response.success) {
-                    alert(response.message || 'Saved successfully!');
-                    location.reload();
+                    // Show success message and redirect back to case view
+                    alert('Success: ' + (response.message || 'Files and remarks saved successfully!'));
+                    window.location.href = 'view_case.php?case_id=<?php echo $case_id; ?>';
                 } else {
                     alert('Error: ' + (response.message || 'Failed to save'));
                 }
@@ -250,40 +247,6 @@ $(document).ready(function() {
                 alert('Error saving. Please try again.');
             }
         });
-    });
-    
-    // Mark verification as complete
-    $('#completeVerificationBtn').click(function() {
-        if (confirm('Mark verification as complete? This will move the task to review stage.')) {
-            var btn = $(this);
-            var originalHtml = btn.html();
-            btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i>Completing...');
-            
-            $.ajax({
-                url: 'save_verifier_submission.php',
-                type: 'POST',
-                data: {
-                    action: 'complete_verification',
-                    case_task_id: <?php echo $case_task_id; ?>
-                },
-                dataType: 'json',
-                success: function(response) {
-                    btn.prop('disabled', false).html(originalHtml);
-                    
-                    if (response.success) {
-                        alert(response.message || 'Verification completed!');
-                        location.reload();
-                    } else {
-                        alert('Error: ' + (response.message || 'Failed to complete'));
-                    }
-                },
-                error: function(xhr, status, error) {
-                    btn.prop('disabled', false).html(originalHtml);
-                    console.error('Error:', error, xhr.responseText);
-                    alert('Error completing verification. Please try again.');
-                }
-            });
-        }
     });
 });
 

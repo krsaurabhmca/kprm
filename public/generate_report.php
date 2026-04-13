@@ -431,20 +431,48 @@ function export_to_pdf($html, $filename, $case_id) {
     try {
         global $base_url;
         
-        // Create mPDF instance
+        // Create mPDF instance with background color support
         $mpdf = new \Mpdf\Mpdf([
             'mode' => 'utf-8',
             'format' => 'A4',
             'margin_left' => 15,
             'margin_right' => 15,
-            'margin_top' => 16,
-            'margin_bottom' => 16,
-            'margin_header' => 9,
-            'margin_footer' => 9
+            'margin_top' => 10,
+            'margin_bottom' => 10,
+            'margin_header' => 0,
+            'margin_footer' => 0,
+            'useSubstitutions' => false,
+            'showImageErrors' => true,
+            'tempDir' => sys_get_temp_dir(),
+            'keep_table_proportions' => true
         ]);
         
-        // Add CSS to prevent images from breaking layout
+        // Disable automatic title/header/footer
+        $mpdf->SetTitle('');
+        $mpdf->SetAuthor('');
+        $mpdf->SetCreator('');
+        $mpdf->SetSubject('');
+        
+        // Remove header and footer completely
+        $mpdf->SetHTMLHeader('');
+        $mpdf->SetHTMLFooter('');
+        
+        // Enable background colors in PDF
+        $mpdf->SetDisplayMode('fullpage');
+        $mpdf->shrink_tables_to_fit = 1;
+        
+        // Enable background colors explicitly for mPDF
+        $mpdf->showImageErrors = true;
+        
+        // Add CSS to prevent images from breaking layout and preserve background colors
         $css = '<style>
+            @page {
+                margin: 0;
+            }
+            body {
+                margin: 0;
+                padding: 0;
+            }
             img {
                 max-width: 100% !important;
                 height: auto !important;
@@ -456,6 +484,11 @@ function export_to_pdf($html, $filename, $case_id) {
                 width: 100%;
                 border-collapse: collapse;
                 page-break-inside: avoid;
+                background-color: transparent !important;
+            }
+            table td, table th {
+                background-color: inherit !important;
+                background: inherit !important;
             }
             table img {
                 max-width: 200px !important;
@@ -465,6 +498,42 @@ function export_to_pdf($html, $filename, $case_id) {
                 width: 100%;
                 overflow: hidden;
             }
+            /* Ensure background colors are preserved in PDF - Enhanced for tables */
+            /* mPDF needs explicit background-color values, not inherit */
+            /* Preserve all background colors in tables - explicit handling */
+            table[style*="background-color"],
+            table[style*="background"],
+            table[bgcolor] {
+                /* Keep original background */
+            }
+            tr[style*="background-color"],
+            tr[style*="background"],
+            tr[bgcolor] {
+                /* Keep original background */
+            }
+            td[style*="background-color"],
+            td[style*="background"],
+            td[bgcolor] {
+                /* Keep original background */
+            }
+            th[style*="background-color"],
+            th[style*="background"],
+            th[bgcolor] {
+                /* Keep original background */
+            }
+            /* Preserve class-based backgrounds - map to actual colors for mPDF */
+            .bg-primary { background-color: #0d6efd !important; }
+            .bg-success { background-color: #198754 !important; }
+            .bg-warning { background-color: #ffc107 !important; }
+            .bg-danger { background-color: #dc3545 !important; }
+            .bg-info { background-color: #0dcaf0 !important; }
+            .bg-secondary { background-color: #6c757d !important; }
+            .bg-light { background-color: #f8f9fa !important; }
+            .bg-dark { background-color: #212529 !important; }
+            .bg-white { background-color: #ffffff !important; }
+            .blue { background-color: #0d6efd !important; color: #ffffff !important; }
+            .header { background-color: #f8f9fa !important; font-weight: bold !important; }
+            .center { text-align: center !important; }
         </style>';
         
         // Convert relative URLs to absolute URLs for images
@@ -480,11 +549,14 @@ function export_to_pdf($html, $filename, $case_id) {
             $html
         );
         
+        // Remove any title tags from HTML
+        $html = preg_replace('/<title[^>]*>.*?<\/title>/is', '', $html);
+        
         // Prepend CSS to HTML
         $html = $css . $html;
         
         // Write HTML content
-        $mpdf->WriteHTML($html);
+        $mpdf->WriteHTML($html, \Mpdf\HTMLParserMode::HTML_BODY);
         
         // Generate filename - use provided filename or generate default
         $base_name = preg_replace('/[^a-zA-Z0-9_-]/', '_', $filename);

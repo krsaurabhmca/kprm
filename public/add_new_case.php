@@ -150,6 +150,10 @@ include('../system/all_header.php');
                                         <input type="hidden" name="client_id" value="<?php echo $client_id; ?>">
                                         <input type="hidden" name="case_id" value="<?php echo $case_id; ?>">
                                         
+                                        <div id="autoSaveStatus" class="alert alert-info py-1 px-2 mb-2" style="display:none; font-size:12px;">
+                                            <i class="fas fa-save me-1"></i><span id="autoSaveMessage">Auto-saving...</span>
+                                        </div>
+                                        
                                         <?php echo build_client_meta_form($client_id, $existing_case_info); ?>
                                         
                                         <div class="d-flex justify-content-between mt-3 pt-3 border-top">
@@ -193,6 +197,33 @@ include('../system/all_header.php');
 
                             $case_info = get_data('cases', $case_id);
                             $application_no = $case_info['count'] > 0 ? $case_info['data']['application_no'] : '';
+                            
+                            // Calculate case status from tasks
+                            $case_tasks_for_status = [];
+                            if ($table_exists && !empty($existing_tasks)) {
+                                foreach ($existing_tasks as $task) {
+                                    $task_data_for_status = json_decode($task['task_data'] ?? '{}', true);
+                                    $case_tasks_for_status[] = [
+                                        'db_status' => $task['task_status'] ?? 'PENDING',
+                                        'task_data' => $task_data_for_status
+                                    ];
+                                }
+                            }
+                            $calculated_case_status = calculate_case_status($case_tasks_for_status);
+                            
+                            // Map case status to display
+                            $case_status_display = [
+                                'PENDING' => 'Pending',
+                                'IN_PROGRESS' => 'In Process',
+                                'COMPLETED' => 'Completed'
+                            ];
+                            $case_status_label = $case_status_display[$calculated_case_status] ?? 'Pending';
+                            $case_status_badge = [
+                                'PENDING' => 'warning',
+                                'IN_PROGRESS' => 'info',
+                                'COMPLETED' => 'success'
+                            ];
+                            $case_status_color = $case_status_badge[$calculated_case_status] ?? 'secondary';
                             ?>
                             
                             <?php if (!$table_exists): ?>
@@ -215,6 +246,7 @@ include('../system/all_header.php');
                                         <h6 class="mb-0">
                                             <i class="fas fa-tasks me-2"></i> Step 3: Manage Tasks
                                             <small class="opacity-75 ms-2">(<?php echo htmlspecialchars($application_no); ?>)</small>
+                                            <span class="badge bg-<?php echo $case_status_color; ?> ms-2"><?php echo htmlspecialchars($case_status_label); ?></span>
                                         </h6>
                                     </div>
                                     <?php if ($table_exists): ?>
@@ -250,15 +282,20 @@ include('../system/all_header.php');
                                                 $task_name = $task_template['count'] > 0 ? $task_template['data']['task_name'] : 'Unknown Task';
                                                 $task_type = $task_template['count'] > 0 ? $task_template['data']['task_type'] : '';
                                                 $task_data = json_decode($task['task_data'] ?? '{}', true);
-                                                $task_status = $task['task_status'] ?? 'PENDING';
+                                                $task_status_db = $task['task_status'] ?? 'PENDING';
                                                 
+                                                // Get display status using the function
+                                                $task_status_display = get_task_status_display($task_status_db, $task_data);
+                                                
+                                                // Map display status to badge colors
                                                 $status_badge = [
-                                                    'PENDING' => 'warning',
-                                                    'IN_PROGRESS' => 'info',
-                                                    'COMPLETED' => 'success',
+                                                    'Fresh Case' => 'warning',
+                                                    'Assigned' => 'info',
+                                                    'Verified' => 'primary',
+                                                    'Reviewed' => 'success',
                                                     'REJECTED' => 'danger'
                                                 ];
-                                                $badge_color = $status_badge[$task_status] ?? 'secondary';
+                                                $badge_color = $status_badge[$task_status_display] ?? 'secondary';
                                                 ?>
                                                 <div class="accordion-item mb-2 border rounded">
                                                     <h2 class="accordion-header" id="heading<?php echo $task['id']; ?>">
@@ -267,7 +304,7 @@ include('../system/all_header.php');
                                                                 <div class="d-flex align-items-center">
                                                                     <i class="fas fa-tasks text-primary me-2"></i>
                                                                     <strong><?php echo htmlspecialchars($task_name); ?></strong>
-                                                                    <span class="badge bg-<?php echo $badge_color; ?> ms-2"><?php echo $task_status; ?></span>
+                                                                    <span class="badge bg-<?php echo $badge_color; ?> ms-2"><?php echo htmlspecialchars($task_status_display); ?></span>
                                                                     <span class="badge bg-secondary ms-1"><?php echo $task_type; ?></span>
                                                                 </div>
                                                                 <small class="text-muted">ID: <?php echo $task['id']; ?></small>
@@ -336,11 +373,11 @@ include('../system/all_header.php');
                                                                                 <i class="fas fa-clipboard-check me-1"></i> Review
                                                                             </a>
                                                                         <?php
-                                                                        // COMPLETED: Show view only
+                                                                        // COMPLETED (Reviewed): Show view only
                                                                         elseif ($current_status == 'COMPLETED'):
                                                                         ?>
                                                                             <span class="badge bg-success fs-6 px-3 py-2">
-                                                                                <i class="fas fa-check-circle me-1"></i> Completed
+                                                                                <i class="fas fa-check-circle me-1"></i> Reviewed
                                                                             </span>
                                                                         <?php endif; ?>
                                                                         
@@ -369,11 +406,24 @@ include('../system/all_header.php');
                                                                     if ($task_meta_fields['count'] > 0) {
                                                                         foreach ($task_meta_fields['data'] as $field) {
                                                                             $field_value = isset($task_data[$field['field_name']]) ? $task_data[$field['field_name']] : '';
+                                                                                                                                                         $is_table = is_array($field_value);
+                                                                             if (!$is_table && !empty($field_value) && is_string($field_value)) {
+                                                                                 $decoded = json_decode(htmlspecialchars_decode($field_value), true);
+                                                                                 if (is_array($decoded)) {
+                                                                                     foreach((array)$decoded as $r) {
+                                                                                         if (is_array($r) && isset($r['section']) && isset($r['particular'])) {
+                                                                                             $is_table = true;
+                                                                                             break;
+                                                                                         }
+                                                                                     }
+                                                                                 }
+                                                                             }
+
                                                                             ?>
-                                                                            <div class="col-md-4 mb-2">
+                                                                            <div class="<?php echo $is_table ? 'col-12' : 'col-md-4'; ?> mb-2">
                                                                                 <label class="form-label text-muted small mb-0"><?php echo htmlspecialchars($field['display_name']); ?></label>
                                                                                 <div class="field-value p-1 bg-white border rounded small">
-                                                                                    <?php echo !empty($field_value) ? htmlspecialchars($field_value) : '<span class="text-muted fst-italic">Not filled</span>'; ?>
+                                                                                    <?php echo render_financial_table_readonly($field_value); ?>
                                                                                 </div>
                                                                             </div>
                                                                             <?php
@@ -426,7 +476,7 @@ include('../system/all_header.php');
                                                             </div>
                                                             <div class="col-md-6 mb-3">
                                                                 <label>Task Name <span class="text-danger">*</span></label>
-                                                                <select name="task_id" id="modal_task_id" class="form-select" required>
+                                                                <select name="task_id" id="modal_task_id" class="form-select" required onchange="loadTaskFields(this.value)">
                                                                     <option value="">Select Task Type First</option>
                                                                 </select>
                                                             </div>
@@ -460,10 +510,18 @@ include('../system/all_header.php');
                                                 <div class="modal-body">
                                                     <div id="assignError" class="alert alert-danger" style="display:none;"></div>
                                                     <div class="mb-3">
-                                                        <label class="form-label"><strong>Select Verifier</strong></label>
+                                                        <label class="form-label"><strong>Select Field Verifier</strong></label>
                                                         <select id="assignVerifierSelect" class="form-select">
                                                             <option value="">Loading verifiers...</option>
                                                         </select>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" id="sendWhatsAppCheck" checked>
+                                                            <label class="form-check-label" for="sendWhatsAppCheck">
+                                                                <i class="fab fa-whatsapp text-success me-1"></i> Send WhatsApp notification with task details
+                                                            </label>
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 <div class="modal-footer">
@@ -473,6 +531,44 @@ include('../system/all_header.php');
                                             </div>
                                         </div>
                                     </div>
+
+                            <!-- Edit Task Modal -->
+                            <div class="modal fade" id="editTaskModal" tabindex="-1">
+                                <div class="modal-dialog modal-lg">
+                                    <div class="modal-content shadow-lg">
+                                        <div class="modal-header bg-primary text-white">
+                                            <h5 class="modal-title">
+                                                <i class="fas fa-edit me-2"></i> Edit Task
+                                            </h5>
+                                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <form id="editTaskForm" onsubmit="return submitEditTaskForm(event)">
+                                            <input type="hidden" name="action" value="update_case_task">
+                                            <input type="hidden" name="case_task_id" id="edit_case_task_id" value="">
+                                            
+                                            <div class="modal-body">
+                                                <div id="editModalError" class="alert alert-danger" style="display:none;"></div>
+                                                <div id="editModalSuccess" class="alert alert-success" style="display:none;"></div>
+                                                
+                                                <div id="editTaskFieldsContainer">
+                                                    <div class="text-center py-5">
+                                                        <div class="spinner-border text-primary"></div>
+                                                        <p class="mt-2">Loading task data...</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                <button type="submit" class="btn btn-primary" id="editTaskSubmitBtn">
+                                                    <i class="fas fa-spinner fa-spin" id="editSubmitSpinner" style="display:none;"></i>
+                                                    Update Task
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
 
                             <!-- Success/Error Messages -->
                             <?php if (isset($_SESSION['success_message'])): ?>
@@ -518,6 +614,8 @@ include('../system/all_header.php');
         </div>
     </div>
 </div>
+
+<?php include('../system/footer.php'); ?>
 
 <style>
 /* Compact Step Progress */
@@ -646,100 +744,139 @@ include('../system/all_header.php');
     }
 }
 </style>
-<?php include('../system/footer.php'); ?>
-
 <script>
-function loadTaskNames() {
-    var taskType = document.getElementById('modal_task_type').value;
+// Function to load tasks based on type
+function loadTasks(taskType) {
     var taskSelect = document.getElementById('modal_task_id');
-    var fieldsContainer = document.getElementById('taskFieldsContainer');
-    
-    if (!taskType) {
-        taskSelect.innerHTML = '<option value="">Select Task Type First</option>';
-        fieldsContainer.innerHTML = '';
-        return;
-    }
-    
-    // Show loading
     taskSelect.innerHTML = '<option value="">Loading tasks...</option>';
-    fieldsContainer.innerHTML = '';
+    taskSelect.disabled = true;
     
-    // Load tasks via AJAX
     $.ajax({
         url: 'get_tasks_by_type.php',
         type: 'GET',
-        data: { task_type: taskType },
+        data: { task_type: taskType, ajax: 1 },
         dataType: 'json',
         success: function(response) {
-            if (response.success) {
-                taskSelect.innerHTML = '<option value="">Select Task</option>';
-                if (response.tasks && response.tasks.length > 0) {
-                    response.tasks.forEach(function(task) {
-                        taskSelect.innerHTML += '<option value="' + task.id + '">' + task.task_name + '</option>';
-                    });
-                } else {
-                    taskSelect.innerHTML = '<option value="">No tasks found for this type</option>';
-                }
-                
-                // Load fields when task is selected
-                taskSelect.onchange = function() {
-                    loadTaskFields(this.value);
-                };
+            taskSelect.disabled = false;
+            if (response.success && response.tasks && response.tasks.length > 0) {
+                var options = '<option value="">-- Select Task --</option>';
+                response.tasks.forEach(function(task) {
+                    options += '<option value="' + task.id + '">' + (task.task_name || task.name) + '</option>';
+                });
+                taskSelect.innerHTML = options;
             } else {
-                taskSelect.innerHTML = '<option value="">Error loading tasks</option>';
-                alert('Error: ' + (response.message || 'Failed to load tasks'));
+                taskSelect.innerHTML = '<option value="">No tasks found for this type</option>';
+                if (typeof notyf === 'function') notyf(response.message || 'No tasks found', 'error');
             }
         },
-        error: function(xhr, status, error) {
+        error: function() {
+            taskSelect.disabled = false;
             taskSelect.innerHTML = '<option value="">Error loading tasks</option>';
-            console.error('AJAX Error:', error);
-            alert('Error loading tasks. Please check console for details.');
+            alert('Failed to load tasks from server.');
         }
     });
 }
 
 function loadTaskFields(taskId) {
+    var container = document.getElementById('taskFieldsContainer');
     if (!taskId) {
-        document.getElementById('taskFieldsContainer').innerHTML = '';
+        container.innerHTML = '';
         return;
     }
     
     // Show loading
-    document.getElementById('taskFieldsContainer').innerHTML = '<div class="text-center"><i class="fas fa-spinner fa-spin"></i> Loading fields...</div>';
+    container.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary" role="status"></div><span class="ms-2">Loading fields...</span></div>';
     
     $.ajax({
         url: 'get_task_fields.php',
         type: 'GET',
-        data: { task_id: taskId },
+        data: { task_id: taskId, ajax: 1 },
         dataType: 'html',
         success: function(html) {
-            console.log('AJAX Success - Response length:', html.length);
-            console.log('AJAX Success - Response preview:', html.substring(0, 200));
             if (!html || html.trim() === '') {
-                document.getElementById('taskFieldsContainer').innerHTML = '<div class="alert alert-warning">No response received from server. Please check browser console and server logs.</div>';
+                container.innerHTML = '<div class="alert alert-warning py-2 small">No client fields configured for this task.</div>';
             } else {
-                document.getElementById('taskFieldsContainer').innerHTML = html;
+                $(container).html(html);
             }
         },
         error: function(xhr, status, error) {
-            console.error('AJAX Error Details:', {
-                status: xhr.status,
-                statusText: xhr.statusText,
-                responseText: xhr.responseText,
-                error: error
-            });
-            var errorMsg = 'Error loading fields: ' + error;
-            if (xhr.responseText) {
-                errorMsg += '<br><small>Response: ' + xhr.responseText.substring(0, 200) + '</small>';
-            }
-            document.getElementById('taskFieldsContainer').innerHTML = '<div class="alert alert-danger">' + errorMsg + '</div>';
+            container.innerHTML = '<div class="alert alert-danger py-2 small">Error loading fields.</div>';
+            console.error('Task Meta Load Error:', error);
         }
     });
 }
 
 function editTask(taskInstanceId, taskTemplateId) {
-    // Load task data and show in modal for editing
-    window.location.href = 'edit_case_task.php?case_task_id=' + taskInstanceId + '&task_id=' + taskTemplateId;
+    $('#edit_case_task_id').val(taskInstanceId);
+    $('#editTaskFieldsContainer').html('<div class="text-center py-5"><div class="spinner-border text-primary"></div><p class="mt-2">Loading task data...</p></div>');
+    $('#editModalError').hide();
+    $('#editModalSuccess').hide();
+    $('#editTaskModal').modal('show');
+    
+    $.ajax({
+        url: 'get_edit_task_fields.php',
+        type: 'GET',
+        data: { case_task_id: taskInstanceId, task_id: taskTemplateId },
+        success: function(html) {
+            $('#editTaskFieldsContainer').html(html);
+        },
+        error: function() {
+            $('#editTaskFieldsContainer').html('<div class="alert alert-danger">Failed to load task data.</div>');
+        }
+    });
+}
+
+function submitEditTaskForm(event) {
+    event.preventDefault();
+    
+    var form = document.getElementById('editTaskForm');
+    var errorDiv = document.getElementById('editModalError');
+    var successDiv = document.getElementById('editModalSuccess');
+    var submitBtn = document.getElementById('editTaskSubmitBtn');
+    var spinner = document.getElementById('editSubmitSpinner');
+    
+    errorDiv.style.display = 'none';
+    successDiv.style.display = 'none';
+    
+    spinner.style.display = 'inline-block';
+    submitBtn.disabled = true;
+    
+    var formData = new FormData(form);
+    formData.append('ajax', '1');
+    
+    $.ajax({
+        url: 'save_case_step.php',
+        type: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        dataType: 'json',
+        success: function(response) {
+            spinner.style.display = 'none';
+            submitBtn.disabled = false;
+            
+            if (response && response.success) {
+                successDiv.innerHTML = '<i class="fas fa-check-circle"></i> ' + (response.message || 'Task updated successfully!');
+                successDiv.style.display = 'block';
+                
+                setTimeout(function() {
+                    $('#editTaskModal').modal('hide');
+                    location.reload();
+                }, 1000);
+            } else {
+                errorDiv.innerHTML = '<i class="fas fa-exclamation-circle"></i> ' + (response.message || 'Failed to update task');
+                errorDiv.style.display = 'block';
+            }
+        },
+        error: function(xhr, status, error) {
+            spinner.style.display = 'none';
+            submitBtn.disabled = false;
+            errorDiv.innerHTML = '<i class="fas fa-exclamation-circle"></i> Error updating task. Please try again.';
+            errorDiv.style.display = 'block';
+        }
+    });
+    
+    return false;
 }
 
 function submitTaskForm(event) {
@@ -795,7 +932,9 @@ function submitTaskForm(event) {
             submitBtn.disabled = false;
             
             if (response && (response.status === 'success' || response.success)) {
-                successDiv.innerHTML = '<i class="fas fa-check-circle"></i> ' + (response.message || 'Task added successfully!');
+                var message = response.message || 'Task added successfully!';
+                // Show success message
+                successDiv.innerHTML = '<i class="fas fa-check-circle"></i> ' + message;
                 successDiv.style.display = 'block';
                 
                 // Close modal and reload after short delay
@@ -877,6 +1016,7 @@ $(document).ready(function() {
     // Remove any existing handlers and attach new one
     $('#confirmAssignBtn').off('click').on('click', function() {
         var verifierId = $('#assignVerifierSelect').val();
+        var sendWhatsApp = $('#sendWhatsAppCheck').is(':checked') ? 1 : 0;
         
         if (verifierId === '') {
             $('#assignError').text('Please select a verifier or choose "Not Assigned"').show();
@@ -892,14 +1032,23 @@ $(document).ready(function() {
             data: {
                 action: 'assign_task',
                 case_task_id: assignCurrentTaskId,
-                verifier_id: verifierId
+                verifier_id: verifierId,
+                send_whatsapp: sendWhatsApp
             },
             dataType: 'json',
             success: function(response) {
                 if (response.success) {
                     $('#assignTaskModal').modal('hide');
-                    // Show success message
-                    alert(response.message || 'Task assigned successfully!');
+                    var message = response.message || 'Task assigned successfully!';
+                    
+                    // If WhatsApp URL is provided, show option to open it
+                    if (response.whatsapp_url) {
+                        if (confirm(message + '\n\nOpen WhatsApp to send message?')) {
+                            window.open(response.whatsapp_url, '_blank');
+                        }
+                    } else {
+                        alert(message);
+                    }
                     location.reload();
                 } else {
                     $('#assignError').text(response.message || 'Failed to assign task').show();
@@ -951,5 +1100,120 @@ function deleteTask(taskInstanceId) {
         });
     }
 }
-</script>
 
+// Auto-save functionality for Step 2 (Client Meta Form)
+$(document).ready(function() {
+    var autoSaveTimer;
+    var isAutoSaving = false;
+    var lastSavedData = '';
+    
+    // Only enable auto-save on step 2
+    <?php if ($step == 2): ?>
+    var form = $('#clientMetaForm');
+    var autoSaveStatus = $('#autoSaveStatus');
+    var autoSaveMessage = $('#autoSaveMessage');
+    
+    // Debounced auto-save function
+    function autoSave() {
+        if (isAutoSaving) return;
+        
+        var formData = new FormData(form[0]);
+        formData.append('action', 'auto_save_client_meta');
+        formData.append('ajax', '1');
+        
+        var currentData = form.serialize();
+        if (currentData === lastSavedData) {
+            return; // No changes
+        }
+        
+        isAutoSaving = true;
+        autoSaveStatus.show();
+        autoSaveMessage.html('<i class="fas fa-spinner fa-spin me-1"></i>Auto-saving...');
+        
+        $.ajax({
+            url: 'save_case_step.php',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            dataType: 'json',
+            success: function(response) {
+                isAutoSaving = false;
+                if (response && response.success) {
+                    lastSavedData = form.serialize();
+                    autoSaveMessage.html('<i class="fas fa-check me-1"></i>Auto-saved');
+                    autoSaveStatus.removeClass('alert-info').addClass('alert-success');
+                    
+                    // Update case_id if returned
+                    if (response.case_id) {
+                        $('input[name="case_id"]').val(response.case_id);
+                    }
+                    
+                    // Hide after 2 seconds
+                    setTimeout(function() {
+                        autoSaveStatus.fadeOut();
+                    }, 2000);
+                } else {
+                    autoSaveMessage.html('<i class="fas fa-exclamation-triangle me-1"></i>Auto-save failed');
+                    autoSaveStatus.removeClass('alert-info').addClass('alert-warning');
+                }
+            },
+            error: function() {
+                isAutoSaving = false;
+                autoSaveMessage.html('<i class="fas fa-exclamation-triangle me-1"></i>Auto-save error');
+                autoSaveStatus.removeClass('alert-info').addClass('alert-warning');
+            }
+        });
+    }
+    
+    // Trigger auto-save on form field changes (debounced)
+    form.on('input change', 'input, select, textarea', function() {
+        clearTimeout(autoSaveTimer);
+        autoSaveTimer = setTimeout(autoSave, 2000); // Save 2 seconds after last change
+    });
+    
+    // Auto-save on page load if case_id exists
+    <?php if ($case_id > 0): ?>
+    setTimeout(autoSave, 1000);
+    <?php endif; ?>
+    <?php endif; ?>
+});
+
+function deleteTask(taskInstanceId) {
+    if (confirm('Are you sure you want to delete this task?')) {
+        $.ajax({
+            url: 'save_case_step.php',
+            type: 'POST',
+            data: {
+                action: 'delete_task',
+                case_task_id: taskInstanceId
+            },
+            success: function(response) {
+                if (typeof response === 'string') {
+                    try {
+                        response = JSON.parse(response);
+                    } catch(e) {}
+                }
+                if (response && response.success) {
+                    location.reload();
+                } else {
+                    alert('Error deleting task: ' + (response.message || 'Unknown error'));
+                }
+            },
+            error: function() {
+                alert('Error deleting task. Please try again.');
+            }
+        });
+    }
+}
+
+function loadTaskNames() {
+    var taskType = document.getElementById('modal_task_type').value;
+    if (taskType) {
+        loadTasks(taskType);
+    } else {
+        document.getElementById('modal_task_id').innerHTML = '<option value="">Select Task Type First</option>';
+        document.getElementById('taskFieldsContainer').innerHTML = '';
+    }
+}
+</script>

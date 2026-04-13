@@ -1,9 +1,57 @@
-<?php require_once('all_header.php');
+<?php 
+// Enable error reporting for debugging
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+
+// Register shutdown function to catch fatal errors
+register_shutdown_function(function() {
+    $error = error_get_last();
+    if ($error !== NULL && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
+        echo '<div style="padding: 20px; color: red; font-family: monospace; background: #fff; border: 2px solid red; margin: 20px;">';
+        echo '<h3>Fatal Error in Dashboard:</h3>';
+        echo '<p><strong>File:</strong> ' . htmlspecialchars($error['file']) . '</p>';
+        echo '<p><strong>Line:</strong> ' . htmlspecialchars($error['line']) . '</p>';
+        echo '<p><strong>Message:</strong> ' . htmlspecialchars($error['message']) . '</p>';
+        echo '</div>';
+    }
+});
+
+try {
+    require_once('all_header.php');
+} catch (Exception $e) {
+    die('<div style="padding: 20px; color: red;">Error loading header: ' . htmlspecialchars($e->getMessage()) . '</div>');
+} catch (Error $e) {
+    die('<div style="padding: 20px; color: red;">Fatal error loading header: ' . htmlspecialchars($e->getMessage()) . '</div>');
+}
+
+// Check if required variables are set
+if (!isset($con) || !$con) {
+    die('<div style="padding: 20px; color: red;">Error: Database connection not available</div>');
+}
+
+if (!isset($user_type)) {
+    $user_type = 'USER';
+}
+
+if (!isset($user_name)) {
+    $user_name = 'Guest';
+}
+
+if (!isset($base_url)) {
+    global $CONFIG;
+    if (isset($CONFIG['base_url'])) {
+        $base_url = $CONFIG['base_url'];
+    } else {
+        $base_url = 'http://localhost/kprm/';
+    }
+}
 
 // Get date filter parameter
 $date_filter = isset($_GET['date_filter']) ? $_GET['date_filter'] : 'all';
 $today = date('Y-m-d');
 $date_where = '';
+$date_where_tasks = '';
 
 switch ($date_filter) {
     case 'today':
@@ -31,13 +79,13 @@ switch ($date_filter) {
         break;
 }
 
-global $con;
-
 // Check if case_tasks table exists
 $has_case_tasks = false;
-$table_check = mysqli_query($con, "SHOW TABLES LIKE 'case_tasks'");
-if ($table_check && mysqli_num_rows($table_check) > 0) {
-    $has_case_tasks = true;
+if ($con) {
+    $table_check = @mysqli_query($con, "SHOW TABLES LIKE 'case_tasks'");
+    if ($table_check && mysqli_num_rows($table_check) > 0) {
+        $has_case_tasks = true;
+    }
 }
 
 // Cases Statistics with date filter
@@ -58,17 +106,19 @@ $cases_sql = "SELECT
     SUM(CASE WHEN case_status = 'COMPLETED' THEN 1 ELSE 0 END) as completed,
     SUM(CASE WHEN case_status = 'CLOSED' THEN 1 ELSE 0 END) as closed
     FROM cases WHERE status != 'DELETED' $date_where";
-$cases_res = mysqli_query($con, $cases_sql);
+$cases_res = @mysqli_query($con, $cases_sql);
 if ($cases_res) {
     $cases_row = mysqli_fetch_assoc($cases_res);
-    $cases_stats = [
-        'total' => (int)$cases_row['total'],
-        'active' => (int)$cases_row['active'],
-        'pending' => (int)$cases_row['pending'],
-        'in_progress' => (int)$cases_row['in_progress'],
-        'completed' => (int)$cases_row['completed'],
-        'closed' => (int)$cases_row['closed']
-    ];
+    if ($cases_row) {
+        $cases_stats = [
+            'total' => (int)($cases_row['total'] ?? 0),
+            'active' => (int)($cases_row['active'] ?? 0),
+            'pending' => (int)($cases_row['pending'] ?? 0),
+            'in_progress' => (int)($cases_row['in_progress'] ?? 0),
+            'completed' => (int)($cases_row['completed'] ?? 0),
+            'closed' => (int)($cases_row['closed'] ?? 0)
+        ];
+    }
 }
 
 // Tasks Statistics with date filter
@@ -80,7 +130,7 @@ $tasks_stats = [
     'completed' => 0
 ];
 
-if ($has_case_tasks) {
+if ($has_case_tasks && $con) {
     $tasks_sql = "SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN task_status = 'PENDING' OR task_status IS NULL THEN 1 ELSE 0 END) as pending,
@@ -88,16 +138,18 @@ if ($has_case_tasks) {
         SUM(CASE WHEN task_status = 'VERIFICATION_COMPLETED' THEN 1 ELSE 0 END) as verification_completed,
         SUM(CASE WHEN task_status = 'COMPLETED' THEN 1 ELSE 0 END) as completed
         FROM case_tasks WHERE status = 'ACTIVE' $date_where_tasks";
-    $tasks_res = mysqli_query($con, $tasks_sql);
+    $tasks_res = @mysqli_query($con, $tasks_sql);
     if ($tasks_res) {
         $tasks_row = mysqli_fetch_assoc($tasks_res);
-        $tasks_stats = [
-            'total' => (int)$tasks_row['total'],
-            'pending' => (int)$tasks_row['pending'],
-            'in_progress' => (int)$tasks_row['in_progress'],
-            'verification_completed' => (int)$tasks_row['verification_completed'],
-            'completed' => (int)$tasks_row['completed']
-        ];
+        if ($tasks_row) {
+            $tasks_stats = [
+                'total' => (int)($tasks_row['total'] ?? 0),
+                'pending' => (int)($tasks_row['pending'] ?? 0),
+                'in_progress' => (int)($tasks_row['in_progress'] ?? 0),
+                'verification_completed' => (int)($tasks_row['verification_completed'] ?? 0),
+                'completed' => (int)($tasks_row['completed'] ?? 0)
+            ];
+        }
     }
 }
 
@@ -107,24 +159,26 @@ for ($i = 29; $i >= 0; $i--) {
     $date = date('Y-m-d', strtotime("-$i days"));
     $day_label = date('M d', strtotime("-$i days"));
     
-    $daily_sql = "SELECT 
-        COUNT(*) as cases_count
-        FROM cases 
-        WHERE status != 'DELETED' AND DATE(created_at) = '$date'";
-    $daily_res = mysqli_query($con, $daily_sql);
     $cases_count = 0;
-    if ($daily_res && $row = mysqli_fetch_assoc($daily_res)) {
-        $cases_count = (int)$row['cases_count'];
+    if ($con) {
+        $daily_sql = "SELECT 
+            COUNT(*) as cases_count
+            FROM cases 
+            WHERE status != 'DELETED' AND DATE(created_at) = '$date'";
+        $daily_res = @mysqli_query($con, $daily_sql);
+        if ($daily_res && $row = mysqli_fetch_assoc($daily_res)) {
+            $cases_count = (int)($row['cases_count'] ?? 0);
+        }
     }
     
     $tasks_count = 0;
-    if ($has_case_tasks) {
+    if ($has_case_tasks && $con) {
         $daily_tasks_sql = "SELECT COUNT(*) as tasks_count
             FROM case_tasks 
             WHERE status = 'ACTIVE' AND DATE(created_at) = '$date'";
-        $daily_tasks_res = mysqli_query($con, $daily_tasks_sql);
+        $daily_tasks_res = @mysqli_query($con, $daily_tasks_sql);
         if ($daily_tasks_res && $row = mysqli_fetch_assoc($daily_tasks_res)) {
-            $tasks_count = (int)$row['tasks_count'];
+            $tasks_count = (int)($row['tasks_count'] ?? 0);
         }
     }
     
@@ -136,41 +190,51 @@ for ($i = 29; $i >= 0; $i--) {
 }
 
 // Clients Statistics
-$clients_sql = "SELECT COUNT(*) as total FROM clients WHERE status = 'ACTIVE'";
-$clients_res = mysqli_query($con, $clients_sql);
 $clients_total = 0;
-if ($clients_res) {
-    $clients_row = mysqli_fetch_assoc($clients_res);
-    $clients_total = (int)$clients_row['total'];
+if ($con) {
+    $clients_sql = "SELECT COUNT(*) as total FROM clients WHERE status = 'ACTIVE'";
+    $clients_res = @mysqli_query($con, $clients_sql);
+    if ($clients_res) {
+        $clients_row = mysqli_fetch_assoc($clients_res);
+        if ($clients_row) {
+            $clients_total = (int)($clients_row['total'] ?? 0);
+        }
+    }
 }
 
 // Verifiers Statistics
-$verifiers_sql = "SELECT COUNT(*) as total FROM verifier WHERE status = 'ACTIVE'";
-$verifiers_res = mysqli_query($con, $verifiers_sql);
 $verifiers_total = 0;
-if ($verifiers_res) {
-    $verifiers_row = mysqli_fetch_assoc($verifiers_res);
-    $verifiers_total = (int)$verifiers_row['total'];
+if ($con) {
+    $verifiers_sql = "SELECT COUNT(*) as total FROM verifier WHERE status = 'ACTIVE'";
+    $verifiers_res = @mysqli_query($con, $verifiers_sql);
+    if ($verifiers_res) {
+        $verifiers_row = mysqli_fetch_assoc($verifiers_res);
+        if ($verifiers_row) {
+            $verifiers_total = (int)($verifiers_row['total'] ?? 0);
+        }
+    }
 }
 
 // Recent Cases (Last 5)
 $recent_cases = [];
-$recent_sql = "SELECT c.*, cl.name as client_name 
-    FROM cases c 
-    LEFT JOIN clients cl ON c.client_id = cl.id 
-    WHERE c.status != 'DELETED'
-    ORDER BY c.created_at DESC 
-    LIMIT 5";
-$recent_res = mysqli_query($con, $recent_sql);
-if ($recent_res) {
-    while ($row = mysqli_fetch_assoc($recent_res)) {
-        $recent_cases[] = $row;
+if ($con) {
+    $recent_sql = "SELECT c.*, cl.name as client_name 
+        FROM cases c 
+        LEFT JOIN clients cl ON c.client_id = cl.id 
+        WHERE c.status != 'DELETED'
+        ORDER BY c.created_at DESC 
+        LIMIT 5";
+    $recent_res = @mysqli_query($con, $recent_sql);
+    if ($recent_res) {
+        while ($row = mysqli_fetch_assoc($recent_res)) {
+            $recent_cases[] = $row;
+        }
     }
 }
 
 // Pending Tasks (Last 5)
 $pending_tasks = [];
-if ($has_case_tasks) {
+if ($has_case_tasks && $con) {
     $pending_tasks_sql = "SELECT ct.*, c.application_no, cl.name as client_name 
         FROM case_tasks ct 
         LEFT JOIN cases c ON ct.case_id = c.id 
@@ -178,7 +242,7 @@ if ($has_case_tasks) {
         WHERE ct.status = 'ACTIVE' AND (ct.task_status = 'PENDING' OR ct.task_status IS NULL)
         ORDER BY ct.created_at DESC 
         LIMIT 5";
-    $pending_tasks_res = mysqli_query($con, $pending_tasks_sql);
+    $pending_tasks_res = @mysqli_query($con, $pending_tasks_sql);
     if ($pending_tasks_res) {
         while ($row = mysqli_fetch_assoc($pending_tasks_res)) {
             $pending_tasks[] = $row;
@@ -188,7 +252,7 @@ if ($has_case_tasks) {
 
 // Tasks requiring review
 $review_tasks = [];
-if ($has_case_tasks) {
+if ($has_case_tasks && $con) {
     $review_sql = "SELECT ct.*, c.application_no, cl.name as client_name 
         FROM case_tasks ct 
         LEFT JOIN cases c ON ct.case_id = c.id 
@@ -196,10 +260,72 @@ if ($has_case_tasks) {
         WHERE ct.status = 'ACTIVE' AND ct.task_status = 'VERIFICATION_COMPLETED'
         ORDER BY ct.verified_at DESC 
         LIMIT 5";
-    $review_res = mysqli_query($con, $review_sql);
+    $review_res = @mysqli_query($con, $review_sql);
     if ($review_res) {
         while ($row = mysqli_fetch_assoc($review_res)) {
             $review_tasks[] = $row;
+        }
+    }
+}
+
+// Client Wise Task Summary with Stages
+$client_task_summary = [];
+if ($has_case_tasks && $con) {
+    // Get all active clients
+    $clients_sql = "SELECT id, name FROM clients WHERE status = 'ACTIVE' ORDER BY name ASC";
+    $clients_res = @mysqli_query($con, $clients_sql);
+    
+    if ($clients_res) {
+        while ($client_row = mysqli_fetch_assoc($clients_res)) {
+            $client_id = intval($client_row['id']);
+            $client_name = $client_row['name'];
+            
+            // Query tasks for this client grouped by task_type and task_status
+            $summary_sql = "
+                SELECT 
+                    COALESCE(ct.task_type, t.task_type, 'UNKNOWN') as task_type,
+                    COUNT(CASE WHEN ct.task_status = 'PENDING' OR ct.task_status IS NULL THEN 1 END) as pending,
+                    COUNT(CASE WHEN ct.task_status = 'VERIFICATION_COMPLETED' THEN 1 END) as verified,
+                    COUNT(CASE WHEN ct.task_status = 'COMPLETED' THEN 1 END) as completed
+                FROM case_tasks ct
+                INNER JOIN cases c ON ct.case_id = c.id
+                LEFT JOIN tasks t ON ct.task_template_id = t.id
+                WHERE c.client_id = '$client_id'
+                AND c.status != 'DELETED'
+                AND ct.status = 'ACTIVE'
+                GROUP BY COALESCE(ct.task_type, t.task_type, 'UNKNOWN')
+            ";
+            
+            $summary_res = @mysqli_query($con, $summary_sql);
+            $client_data = [
+                'id' => $client_id,
+                'name' => $client_name,
+                'ITO' => ['pending' => 0, 'verified' => 0, 'completed' => 0],
+                'BANKING' => ['pending' => 0, 'verified' => 0, 'completed' => 0],
+                'PHYSICAL' => ['pending' => 0, 'verified' => 0, 'completed' => 0]
+            ];
+            
+            if ($summary_res) {
+                while ($row = mysqli_fetch_assoc($summary_res)) {
+                    $task_type = strtoupper($row['task_type'] ?? 'UNKNOWN');
+                    // Map DOCUMENT to BANKING if needed
+                    if ($task_type == 'DOCUMENT') {
+                        $task_type = 'BANKING';
+                    }
+                    // Map FILED to PHYSICAL if needed
+                    if ($task_type == 'FILED') {
+                        $task_type = 'PHYSICAL';
+                    }
+                    
+                    if (isset($client_data[$task_type])) {
+                        $client_data[$task_type]['pending'] = (int)($row['pending'] ?? 0);
+                        $client_data[$task_type]['verified'] = (int)($row['verified'] ?? 0);
+                        $client_data[$task_type]['completed'] = (int)($row['completed'] ?? 0);
+                    }
+                }
+            }
+            
+            $client_task_summary[] = $client_data;
         }
     }
 }
@@ -303,6 +429,69 @@ if ($has_case_tasks) {
                 </div>
             </div>
         </div>
+
+        <!-- Client Wise Task Summary with Stages -->
+        <?php if ($has_case_tasks && !empty($client_task_summary)): ?>
+        <div class="card shadow-sm mb-4">
+            <div class="card-header text-white" style="background-color: #808080;">
+                <h6 class="mb-0 fw-bold">Client Wise Task Summary with Stages</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover mb-0" style="font-size: 0.9rem;">
+                        <thead style="background-color: #F2F2F2;">
+                            <tr>
+                                <th class="text-center" style="font-weight: 600; border: 1px solid #ddd;">Client</th>
+                                <th colspan="3" class="text-center" style="font-weight: 600; border: 1px solid #ddd; background-color: #E7F3FF;">ITO</th>
+                                <th colspan="3" class="text-center" style="font-weight: 600; border: 1px solid #ddd; background-color: #E7F3FF;">Banking</th>
+                                <th colspan="3" class="text-center" style="font-weight: 600; border: 1px solid #ddd; background-color: #E7F3FF;">Physical (Filed)</th>
+                            </tr>
+                            <tr>
+                                <th style="border: 1px solid #ddd;"></th>
+                                <th class="text-center" style="font-weight: 600; border: 1px solid #ddd; background-color: #E7F3FF;">Pending</th>
+                                <th class="text-center" style="font-weight: 600; border: 1px solid #ddd; background-color: #E7F3FF;">Verified</th>
+                                <th class="text-center" style="font-weight: 600; border: 1px solid #ddd; background-color: #E7F3FF;">Completed</th>
+                                <th class="text-center" style="font-weight: 600; border: 1px solid #ddd; background-color: #E7F3FF;">Pending</th>
+                                <th class="text-center" style="font-weight: 600; border: 1px solid #ddd; background-color: #E7F3FF;">Verified</th>
+                                <th class="text-center" style="font-weight: 600; border: 1px solid #ddd; background-color: #E7F3FF;">Completed</th>
+                                <th class="text-center" style="font-weight: 600; border: 1px solid #ddd; background-color: #E7F3FF;">Pending</th>
+                                <th class="text-center" style="font-weight: 600; border: 1px solid #ddd; background-color: #E7F3FF;">Verified</th>
+                                <th class="text-center" style="font-weight: 600; border: 1px solid #ddd; background-color: #E7F3FF;">Completed</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php 
+                            $row_count = 0;
+                            foreach ($client_task_summary as $client): 
+                                $row_count++;
+                                $row_class = ($row_count % 2 == 0) ? 'style="background-color: #F9F9F9;"' : '';
+                            ?>
+                                <tr <?= $row_class ?>>
+                                    <td style="font-weight: 600; border: 1px solid #ddd;">
+                                        <a href="<?= $base_url ?>public/client_case_dashboard.php?client_id=<?= $client['id'] ?>" 
+                                           class="text-decoration-none text-dark" 
+                                           style="color: #0070C0 !important;"
+                                           title="View Client Dashboard">
+                                            <i class="fas fa-external-link-alt me-1"></i><?= htmlspecialchars($client['name']) ?>
+                                        </a>
+                                    </td>
+                                    <td class="text-center" style="border: 1px solid #ddd;"><?= $client['ITO']['pending'] ?></td>
+                                    <td class="text-center" style="border: 1px solid #ddd;"><?= $client['ITO']['verified'] ?></td>
+                                    <td class="text-center" style="border: 1px solid #ddd;"><?= $client['ITO']['completed'] ?></td>
+                                    <td class="text-center" style="border: 1px solid #ddd;"><?= $client['BANKING']['pending'] ?></td>
+                                    <td class="text-center" style="border: 1px solid #ddd;"><?= $client['BANKING']['verified'] ?></td>
+                                    <td class="text-center" style="border: 1px solid #ddd;"><?= $client['BANKING']['completed'] ?></td>
+                                    <td class="text-center" style="border: 1px solid #ddd;"><?= $client['PHYSICAL']['pending'] ?></td>
+                                    <td class="text-center" style="border: 1px solid #ddd;"><?= $client['PHYSICAL']['verified'] ?></td>
+                                    <td class="text-center" style="border: 1px solid #ddd;"><?= $client['PHYSICAL']['completed'] ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <!-- Statistics Cards - Cases -->
         <div class="row mb-4">
@@ -623,6 +812,109 @@ if ($has_case_tasks) {
             </div>
         </div>
 
+        <!-- All Clients Table -->
+        <?php
+        $all_clients_list = [];
+        if ($con) {
+            $all_clients_sql = "SELECT c.* FROM clients c WHERE c.status = 'ACTIVE' ORDER BY c.name ASC";
+            $all_clients_res = @mysqli_query($con, $all_clients_sql);
+            if ($all_clients_res) {
+                while ($row = mysqli_fetch_assoc($all_clients_res)) {
+                    // Get user info for this client
+                    $client_id = intval($row['id']);
+                    $user_data = ['user_name' => 'N/A', 'user_email' => 'N/A', 'user_mobile' => 'N/A'];
+                    if ($con) {
+                        // Try to get user info via user_clients junction table first
+                        $user_sql = "SELECT u.user_name, u.user_email, u.user_mobile 
+                                     FROM op_user u 
+                                     INNER JOIN user_clients uc ON u.id = uc.user_id 
+                                     WHERE uc.client_id = '$client_id' 
+                                     AND u.user_type = 'CLIENT' 
+                                     AND u.status = 'ACTIVE' 
+                                     AND uc.status = 'ACTIVE' 
+                                     LIMIT 1";
+                        $user_res = @mysqli_query($con, $user_sql);
+                        if ($user_res && $user_row = mysqli_fetch_assoc($user_res)) {
+                            $user_data = $user_row;
+                        } else {
+                            // Fallback: Try matching by user_name or email if clients table has these fields
+                            $client_name = isset($row['name']) ? mysqli_real_escape_string($con, $row['name']) : '';
+                            $client_email = isset($row['email']) ? mysqli_real_escape_string($con, $row['email']) : '';
+                            if (!empty($client_name) || !empty($client_email)) {
+                                $fallback_sql = "SELECT user_name, user_email, user_mobile 
+                                                 FROM op_user 
+                                                 WHERE user_type = 'CLIENT' 
+                                                 AND status = 'ACTIVE' 
+                                                 AND (";
+                                $conditions = [];
+                                if (!empty($client_name)) {
+                                    $conditions[] = "(user_name = '$client_name' OR full_name = '$client_name')";
+                                }
+                                if (!empty($client_email)) {
+                                    $conditions[] = "user_email = '$client_email'";
+                                }
+                                $fallback_sql .= implode(' OR ', $conditions) . ") LIMIT 1";
+                                $fallback_res = @mysqli_query($con, $fallback_sql);
+                                if ($fallback_res && $fallback_row = mysqli_fetch_assoc($fallback_res)) {
+                                    $user_data = $fallback_row;
+                                }
+                            }
+                        }
+                    }
+                    $row['username'] = $user_data['user_name'] ?? 'N/A';
+                    $row['email'] = $user_data['user_email'] ?? 'N/A';
+                    $row['mobile'] = $user_data['user_mobile'] ?? 'N/A';
+                    $all_clients_list[] = $row;
+                }
+            }
+        }
+        ?>
+        <?php if (!empty($all_clients_list)): ?>
+        <div class="card shadow-sm mb-4">
+            <div class="card-header text-white" style="background-color: #0070C0;">
+                <h6 class="mb-0 fw-bold">All Clients</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover mb-0" style="font-size: 0.9rem;">
+                        <thead style="background-color: #F2F2F2;">
+                            <tr>
+                                <th class="text-center" style="font-weight: 600; border: 1px solid #ddd; width: 50px;">#</th>
+                                <th style="font-weight: 600; border: 1px solid #ddd;">Client Name</th>
+                                <th style="font-weight: 600; border: 1px solid #ddd;">User Name</th>
+                                <th style="font-weight: 600; border: 1px solid #ddd;">Email</th>
+                                <th style="font-weight: 600; border: 1px solid #ddd;">Mobile</th>
+                                <th class="text-center" style="font-weight: 600; border: 1px solid #ddd;">View Statics</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php 
+                            $client_num = 0;
+                            foreach ($all_clients_list as $client): 
+                                $client_num++;
+                                $row_class = ($client_num % 2 == 0) ? 'style="background-color: #F9F9F9;"' : '';
+                            ?>
+                                <tr <?= $row_class ?>>
+                                    <td class="text-center" style="border: 1px solid #ddd;"><?= $client_num ?></td>
+                                    <td style="border: 1px solid #ddd;"><?= htmlspecialchars($client['name']) ?></td>
+                                    <td style="border: 1px solid #ddd;"><?= htmlspecialchars($client['username'] ?? 'N/A') ?></td>
+                                    <td style="border: 1px solid #ddd;"><?= htmlspecialchars($client['email'] ?? 'N/A') ?></td>
+                                    <td style="border: 1px solid #ddd;"><?= htmlspecialchars($client['mobile'] ?? 'N/A') ?></td>
+                                    <td class="text-center" style="border: 1px solid #ddd;">
+                                        <a href="<?= $base_url ?>public/client_case_dashboard.php?client_id=<?= $client['id'] ?>" 
+                                           class="btn btn-sm btn-primary">
+                                            <i class="fas fa-list me-1"></i>Dashboard
+                                        </a>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <!-- Additional Statistics -->
         <div class="row">
             <div class="col-md-6 mb-4">
@@ -663,9 +955,20 @@ if ($has_case_tasks) {
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
 <script>
-// Task Status Pie Chart
-const taskStatusCtx = document.getElementById('taskStatusChart').getContext('2d');
-new Chart(taskStatusCtx, {
+// Wait for DOM and Chart.js to be ready
+document.addEventListener('DOMContentLoaded', function() {
+    try {
+        // Check if Chart is available
+        if (typeof Chart === 'undefined') {
+            console.error('Chart.js library not loaded');
+            return;
+        }
+        
+        // Task Status Pie Chart
+        const taskStatusChartEl = document.getElementById('taskStatusChart');
+        if (taskStatusChartEl) {
+            const taskStatusCtx = taskStatusChartEl.getContext('2d');
+            new Chart(taskStatusCtx, {
     type: 'doughnut',
     data: {
         labels: ['Pending', 'In Progress', 'Awaiting Review', 'Completed'],
@@ -695,11 +998,14 @@ new Chart(taskStatusCtx, {
             }
         }
     }
-});
-
-// Case Status Pie Chart
-const caseStatusCtx = document.getElementById('caseStatusChart').getContext('2d');
-new Chart(caseStatusCtx, {
+            });
+        }
+        
+        // Case Status Pie Chart
+        const caseStatusChartEl = document.getElementById('caseStatusChart');
+        if (caseStatusChartEl) {
+            const caseStatusCtx = caseStatusChartEl.getContext('2d');
+            new Chart(caseStatusCtx, {
     type: 'doughnut',
     data: {
         labels: ['Active', 'Pending', 'In Progress', 'Completed'],
@@ -729,12 +1035,15 @@ new Chart(caseStatusCtx, {
             }
         }
     }
-});
-
-// Daily Activity Line Chart
-const dailyActivityCtx = document.getElementById('dailyActivityChart').getContext('2d');
-const dailyLabels = <?= json_encode(array_column($daily_stats, 'date')) ?>;
-new Chart(dailyActivityCtx, {
+            });
+        }
+        
+        // Daily Activity Line Chart
+        const dailyActivityChartEl = document.getElementById('dailyActivityChart');
+        if (dailyActivityChartEl) {
+            const dailyActivityCtx = dailyActivityChartEl.getContext('2d');
+            const dailyLabels = <?= json_encode(array_column($daily_stats, 'date')) ?>;
+            new Chart(dailyActivityCtx, {
     type: 'line',
     data: {
         labels: dailyLabels,
@@ -768,11 +1077,30 @@ new Chart(dailyActivityCtx, {
             }
         }
     }
+            });
+        }
+    } catch (error) {
+        console.error('Error initializing charts:', error);
+    }
 });
 </script>
 
+<style>
+/* Client Dashboard Link Hover Effect */
+a[href*="client_case_dashboard.php"] {
+    transition: all 0.2s ease;
+}
+a[href*="client_case_dashboard.php"]:hover {
+    color: #0056b3 !important;
+    text-decoration: underline !important;
+}
+a[href*="client_case_dashboard.php"] i {
+    font-size: 0.85em;
+}
+</style>
+
 <?php require_once('footer.php'); ?>
 
-<script src='./js/kprm.js'></script>
+<!-- <script src='./js/kprm.js'></script> -->
 </body>
 </html>

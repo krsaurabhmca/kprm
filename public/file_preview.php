@@ -12,20 +12,28 @@ if (empty($file_url)) {
     die('No file specified');
 }
 
-$file_path = '../upload/' . $file_url;
-$file_extension = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+// Check if file_url is external
+$is_external = (strpos($file_url, 'http://') === 0 || strpos($file_url, 'https://') === 0);
 
-// Check if file exists
-if (!file_exists($file_path)) {
-    die('File not found: ' . htmlspecialchars($file_name));
+if ($is_external) {
+    $file_path = $file_url;
+    $full_url = $file_url;
+} else {
+    $file_path = '../upload/' . $file_url;
+    
+    // Check if file exists for local files
+    if (!file_exists($file_path)) {
+        die('File not found: ' . htmlspecialchars($file_name));
+    }
+    
+    // Get full URL for local files
+    $base_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'];
+    $script_path = dirname($_SERVER['SCRIPT_NAME']);
+    $script_path = str_replace('/public', '', $script_path);
+    $full_url = $base_url . $script_path . '/upload/' . $file_url;
 }
 
-// Get full URL for Google Docs Viewer (needs to be publicly accessible)
-$base_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'];
-$script_path = dirname($_SERVER['SCRIPT_NAME']);
-// Remove /public from path if present
-$script_path = str_replace('/public', '', $script_path);
-$full_url = $base_url . $script_path . '/upload/' . $file_url;
+$file_extension = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
 ?>
 <!DOCTYPE html>
 <html lang="en">

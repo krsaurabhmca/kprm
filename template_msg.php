@@ -1,11 +1,38 @@
 <?php 
 
 include_once('config.php');
-function sendTemplateMessage($phoneNumber, $templateName, $header = [], $fields = [], $contact = null) {
+
+// Include op_lib for logging functions if not already included
+if (!function_exists('log_message')) {
+    require_once('system/op_lib.php');
+}
+
+function sendTemplateMessage($phoneNumber, $templateName, $header = [], $fields = [], $contact = null, $to_user = null, $title = 'WhatsApp Notification') {
+    global $user_id;
+    
     $apiBaseUrl = "https://whatsapp.x2z.in/api";
     $vendorUid  = "d6213789-b0da-4393-bfc6-b1a824175df7";
     $templateLanguage = "en_US";
     $bearerToken = "28HlzRLdAhlZ40CjbNobGDPiY611TCn2p5M2PYPzK0nJHkFVvpl1E2hdFDdqvpwl";
+
+    // Clean phone number
+    $clean_phone = preg_replace('/[^0-9]/', '', $phoneNumber);
+    
+    // Build message text from template and fields
+    $message_text = "Template: {$templateName}";
+    if (!empty($fields)) {
+        $message_text .= "\n" . implode("\n", $fields);
+    }
+
+    // Log message as pending
+    $msg_id = log_message(
+        $title,
+        $message_text,
+        $to_user,
+        'WhatsApp',
+        $clean_phone,
+        'pending'
+    );
 
     // Build payload
     $payload = [
@@ -56,10 +83,24 @@ function sendTemplateMessage($phoneNumber, $templateName, $header = [], $fields 
     curl_close($ch);
 
     if ($error) {
-        return ["success" => false, "error" => $error];
+        // Update status on error
+        if ($msg_id) {
+            update_message_status($msg_id, 'pending');
+        }
+        return ["success" => false, "error" => $error, "msg_id" => $msg_id];
     }
 
     $responseData = json_decode($response, true);
+    
+    // Update message status based on response
+    if ($msg_id) {
+        if (isset($responseData['response']['data']['wamid']) || 
+            (isset($responseData['success']) && $responseData['success'])) {
+            update_message_status($msg_id, 'sent');
+        } else {
+            update_message_status($msg_id, 'pending');
+        }
+    }
 
     // ✅ Insert/Update into DB
     if (isset($responseData['response']['data'])) {
@@ -111,5 +152,5 @@ function sendTemplateMessage($phoneNumber, $templateName, $header = [], $fields 
         $mysqli->close();
     }
 
-    return ["success" => true, "response" => $responseData];
+    return ["success" => true, "response" => $responseData, "msg_id" => $msg_id];
 }

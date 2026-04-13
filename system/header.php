@@ -48,9 +48,11 @@ else{
 	<!-- Choose your prefered color scheme -->
 	 <link href="<?= $base_url ?>system/css/light.css" rel="stylesheet"> 
 	 <link href="<?= $base_url ?>system/css/op.css" rel="stylesheet"> 
+	 <link href="<?= $base_url ?>system/css/json_table.css" rel="stylesheet"> 
 	 <!--<link href="css/dark.css" rel="stylesheet"> -->
 
 	<!-- BEGIN SETTINGS -->
+	<script src="<?= $base_url ?>system/js/json_table.js"></script>
 	<!--<script src="<?= $base_url ?>system/js/settings.js"></script>-->
 	<link href="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css" rel="stylesheet">
 	<!-- END SETTINGS -->

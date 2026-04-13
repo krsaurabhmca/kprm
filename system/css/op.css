@@ -110,3 +110,6 @@ th{
     justify-content: center;
     width: 40px;
 }
+.alert{
+    padding: 5px 10px!important;
+}

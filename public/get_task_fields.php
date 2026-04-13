@@ -15,7 +15,7 @@ ini_set('display_errors', 1);
 ini_set('log_errors', 1);
 
 // Set error handler to catch fatal errors
-register_shutdown_function(function() {
+register_shutdown_function(function () {
     $error = error_get_last();
     if ($error !== NULL && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
         ob_end_clean();
@@ -222,49 +222,92 @@ while ($row = mysqli_fetch_assoc($res)) {
     $type = strtoupper(trim($row['input_type']));
     $value = htmlspecialchars($row['default_value'] ?? '');
     $required = (strtoupper($row['is_required'] ?? 'NO') == 'YES') ? 'required' : '';
-    
+
     if ($debug_mode && $field_count == 1) {
         error_log("get_task_fields.php - Processing first field: " . $name);
     }
-    
-    // Determine column width based on field type
-    $col_class = 'col-md-6';
-    if ($type == 'TEXTAREA') {
+
+    // Determine if it is a financial table
+    $is_json_table = false;
+    if ($type == 'JSON_TABLE' || $type == 'COMPARISON_TABLE') {
+        $is_json_table = true;
+    } else if (!empty($value) && (strpos($value, '{') === 0 || strpos($value, '[') === 0)) {
+        // Auto-detect based on JSON structure
+        $decoded = json_decode(htmlspecialchars_decode($value), true);
+        if (is_array($decoded)) {
+            // Check for financial structure (either map of sections or array of rows)
+            if (isset($decoded['P & L Statement']) || isset($decoded['Balance Sheet Statement'])) {
+                $is_json_table = true;
+            } else {
+                // Check if it's an array of rows with section/particular
+                $first_row = @reset($decoded);
+                if (is_array($first_row) && isset($first_row['section']) && isset($first_row['particular'])) {
+                    $is_json_table = true;
+                }
+            }
+        }
+    }
+
+    // Determine column width based on field type and whether it's a table
+    $col_class = 'col-md-4';
+    if ($type == 'TEXTAREA' || $is_json_table) {
         $col_class = 'col-md-12';
     }
-    
+
     echo '<div class="' . $col_class . ' mb-3">';
     echo '<label class="form-label"><strong>' . $label . '</strong>';
     if ($required) {
         echo ' <span class="text-danger">*</span>';
     }
     echo '</label>';
-    
+
     switch ($type) {
         case 'DATE':
             echo '<input type="date" name="task_meta[' . $name . ']" class="form-control" value="' . $value . '" ' . $required . '>';
             break;
-            
+
         case 'NUMBER':
             echo '<input type="number" name="task_meta[' . $name . ']" class="form-control" value="' . $value . '" step="any" ' . $required . '>';
             break;
-            
+
         case 'SELECT':
             echo '<select name="task_meta[' . $name . ']" class="form-select" ' . $required . '>';
             echo '<option value="">Select ' . $label . '</option>';
             echo '</select>';
             break;
-            
+
         case 'TEXTAREA':
             echo '<textarea name="task_meta[' . $name . ']" class="form-control" rows="3" ' . $required . '>' . $value . '</textarea>';
             break;
-            
+
+        case 'JSON_TABLE':
+        case 'COMPARISON_TABLE':
         case 'TEXT':
         default:
-            echo '<input type="text" name="task_meta[' . $name . ']" class="form-control" value="' . $value . '" ' . $required . '>';
+            if ($is_json_table) {
+                $config_obj = json_decode($value ?: '{}', true);
+                $config_js = json_encode($config_obj ?: new stdClass());
+
+                echo '<div id="json_table_container_' . $name . '" class="json-table-wrapper"></div>';
+                echo '<input type="hidden" name="task_meta[' . $name . ']" id="json_table_input_' . $name . '" value="">';
+                echo '<script>
+                    (function() {
+                        const initTable = () => {
+                            if (typeof initJsonTable === "function") {
+                                initJsonTable("' . $name . '", ' . $config_js . ', null);
+                            } else {
+                                setTimeout(initTable, 100);
+                            }
+                        };
+                        initTable();
+                    })();
+                </script>';
+            } else {
+                echo '<input type="text" name="task_meta[' . $name . ']" class="form-control" value="' . $value . '" ' . $required . '>';
+            }
             break;
     }
-    
+
     echo '</div>';
 }
 

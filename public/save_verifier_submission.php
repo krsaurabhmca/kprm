@@ -60,7 +60,20 @@ if ($action == 'save_verifier_submission') {
         'updated_by' => $_SESSION['user_id']
     ];
     
-    // Don't auto-change status - user must explicitly mark verification as complete
+    // Check if files are being uploaded or remarks are being added
+    $has_files = isset($_FILES['attachments']) && !empty($_FILES['attachments']['name'][0]);
+    $has_remarks = !empty($verifier_remarks);
+    $current_status = $case_task_data['task_status'] ?? 'PENDING';
+    
+    // Auto-mark as VERIFICATION_COMPLETED if files are uploaded or remarks are added
+    // Only if current status is IN_PROGRESS
+    $verification_auto_completed = false;
+    if (($has_files || $has_remarks) && $current_status == 'IN_PROGRESS') {
+        $update_data['task_status'] = 'VERIFICATION_COMPLETED';
+        $update_data['verified_at'] = date('Y-m-d H:i:s');
+        $verification_auto_completed = true;
+    }
+    
     $update_result = update_data('case_tasks', $update_data, $case_task_id);
     
     if ($update_result['status'] != 'success') {
@@ -124,10 +137,24 @@ if ($action == 'save_verifier_submission') {
         $message .= ' ' . count($uploaded_files) . ' file(s) uploaded.';
     }
     
+    // Add message if verification was auto-completed
+    if ($verification_auto_completed) {
+        $message .= ' Verification has been automatically marked as complete.';
+    }
+    
+    // Get case_id for redirect
+    $case_task_check = get_data('case_tasks', $case_task_id);
+    $case_id = 0;
+    if ($case_task_check['count'] > 0) {
+        $case_id = $case_task_check['data']['case_id'] ?? 0;
+    }
+    
     echo json_encode([
         'success' => true,
         'message' => $message,
-        'files_uploaded' => count($uploaded_files)
+        'files_uploaded' => count($uploaded_files),
+        'case_id' => $case_id,
+        'verification_completed' => $verification_auto_completed
     ]);
     exit;
     
@@ -228,9 +255,11 @@ if ($action == 'save_verifier_submission') {
     $update_result = update_data('case_tasks', $update_data, $case_task_id);
     
     if ($update_result['status'] == 'success') {
+        $case_id = $case_task_data['case_id'] ?? 0;
         echo json_encode([
             'success' => true,
-            'message' => 'Verification marked as complete! Task is now ready for review.'
+            'message' => 'Verification marked as complete! Task is now ready for review.',
+            'case_id' => $case_id
         ]);
     } else {
         echo json_encode([

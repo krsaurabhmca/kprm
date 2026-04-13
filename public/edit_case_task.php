@@ -52,7 +52,8 @@ $case_data = $case_info['count'] > 0 ? $case_info['data'] : null;
 // Get client info
 $client_id = $case_data ? $case_data['client_id'] : 0;
 $client_info = $client_id > 0 ? get_data('clients', $client_id) : ['count' => 0];
-$client_name = $client_info['count'] > 0 ? $client_info['data']['client_name'] : 'Unknown Client';
+$client_name = $client_info['count'] > 0 ? ($client_info['data']['name'] ?? 'Unknown Client') : 'Unknown Client';
+$application_no = $case_data ? ($case_data['application_no'] ?? 'N/A') : 'N/A';
 
 // Display messages
 if (isset($_SESSION['success_message'])) {
@@ -71,74 +72,128 @@ if (isset($_SESSION['error_message'])) {
 }
 ?>
 
-<div class="container-fluid">
+<div class="container-fluid py-3">
     <div class="row">
         <div class="col-12">
-            <div class="card">
-                    <div class="card-header">
-                        <h4 class="card-title mb-0">
-                            <i class="fas fa-edit"></i> Edit Task: <?php echo htmlspecialchars($task_name); ?>
-                        </h4>
-                        <div class="card-tools">
-                            <?php
-                            // Workflow-based button display
-                            $current_status = $case_task_data['task_status'] ?? 'PENDING';
-                            
-                            // PENDING: Show Assign only
-                            if ($current_status == 'PENDING'):
-                            ?>
-                                <button type="button" class="btn btn-success btn-sm" onclick="window.location.href='add_new_case.php?step=3&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>'">
-                                    <i class="fas fa-user-plus"></i> Assign Task
-                                </button>
-                            <?php
-                            // IN_PROGRESS (Assigned): Show Reassign and Verify
-                            elseif ($current_status == 'IN_PROGRESS'):
-                            ?>
-                                <?php if (!empty($case_task_data['assigned_to'])): ?>
-                                    <a href="task_verifier_submit.php?case_task_id=<?php echo $case_task_id; ?>" class="btn btn-info btn-sm" title="Verify Task">
-                                        <i class="fas fa-check-circle"></i> Verify
-                                    </a>
-                                <?php endif; ?>
-                            <?php
-                            // VERIFICATION_COMPLETED: Show Review only
-                            elseif ($current_status == 'VERIFICATION_COMPLETED'):
-                            ?>
-                                <a href="task_review.php?case_task_id=<?php echo $case_task_id; ?>" class="btn btn-warning btn-sm" title="Review Task">
-                                    <i class="fas fa-clipboard-check"></i> Review
-                                </a>
-                            <?php
-                            // COMPLETED: Show completed badge
-                            elseif ($current_status == 'COMPLETED'):
-                            ?>
-                                <span class="badge bg-success">Task Completed</span>
-                            <?php endif; ?>
-                            
-                            <a href="add_new_case.php?step=3&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>" class="btn btn-secondary btn-sm">
-                                <i class="fas fa-arrow-left"></i> Back to Case Tasks
+            <!-- Page Header -->
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h4 class="mb-1">
+                        <i class="fas fa-edit text-primary me-2"></i>
+                        <strong>Edit Task: <?php echo htmlspecialchars($task_name); ?></strong>
+                    </h4>
+                    <small class="text-muted">
+                        <i class="fas fa-folder me-1"></i>Case #<?php echo $case_id; ?> |
+                        <i class="fas fa-building me-1"></i><?php echo htmlspecialchars($client_name); ?>
+                        <?php if ($application_no != 'N/A'): ?>
+                            | <i class="fas fa-hashtag me-1"></i><?php echo htmlspecialchars($application_no); ?>
+                        <?php endif; ?>
+                    </small>
+                </div>
+                <div class="d-flex gap-2">
+                    <?php
+                    // Workflow-based button display
+                    $current_status = $case_task_data['task_status'] ?? 'PENDING';
+
+                    // PENDING: Show Assign only
+                    if ($current_status == 'PENDING'):
+                        ?>
+                        <button type="button" class="btn btn-success btn-sm"
+                            onclick="window.location.href='add_new_case.php?step=3&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>'">
+                            <i class="fas fa-user-plus me-1"></i> Assign Task
+                        </button>
+                        <?php
+                        // IN_PROGRESS (Assigned): Show Verify
+                    elseif ($current_status == 'IN_PROGRESS'):
+                        ?>
+                        <?php if (!empty($case_task_data['assigned_to'])): ?>
+                            <a href="task_verifier_submit.php?case_task_id=<?php echo $case_task_id; ?>"
+                                class="btn btn-info btn-sm" title="Verify Task">
+                                <i class="fas fa-check-circle me-1"></i> Verify
                             </a>
-                        </div>
-                    </div>
+                        <?php endif; ?>
+                        <?php
+                        // VERIFICATION_COMPLETED: Show Review
+                    elseif ($current_status == 'VERIFICATION_COMPLETED'):
+                        ?>
+                        <a href="task_review.php?case_task_id=<?php echo $case_task_id; ?>" class="btn btn-warning btn-sm"
+                            title="Review Task">
+                            <i class="fas fa-clipboard-check me-1"></i> Review
+                        </a>
+                        <?php
+                        // COMPLETED: Show completed badge
+                    elseif ($current_status == 'COMPLETED'):
+                        ?>
+                        <span class="badge bg-success fs-6 px-3 py-2">
+                            <i class="fas fa-check-circle me-1"></i>Task Completed
+                        </span>
+                    <?php endif; ?>
+
+                    <a href="add_new_case.php?step=3&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>"
+                        class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-arrow-left me-1"></i> Back
+                    </a>
+                </div>
+            </div>
+
+            <!-- Main Card -->
+            <div class="card shadow-sm">
                 <div class="card-body">
-                    <!-- Case & Client Info -->
+                    <!-- Case & Task Info Cards -->
                     <div class="row mb-4">
-                        <div class="col-md-6">
-                            <strong>Case ID:</strong> <?php echo $case_id; ?><br>
-                            <strong>Client:</strong> <?php echo htmlspecialchars($client_name); ?>
+                        <div class="col-md-4">
+                            <div class="card border-0 bg-light">
+                                <div class="card-body p-3">
+                                    <small class="text-muted d-block mb-1">
+                                        <i class="fas fa-tag me-1"></i>Task Type
+                                    </small>
+                                    <strong class="d-block"><?php echo htmlspecialchars($task_type); ?></strong>
+                                </div>
+                            </div>
                         </div>
-                        <div class="col-md-6">
-                            <strong>Task Type:</strong> <?php echo htmlspecialchars($task_type); ?><br>
-                            <strong>Task Status:</strong> 
-                            <span class="badge bg-<?php 
-                                echo $case_task_data['task_status'] == 'COMPLETED' ? 'success' : 
-                                    ($case_task_data['task_status'] == 'IN_PROGRESS' ? 'info' : 
-                                    ($case_task_data['task_status'] == 'REJECTED' ? 'danger' : 'warning')); 
-                            ?>">
-                                <?php echo htmlspecialchars($case_task_data['task_status'] ?? 'PENDING'); ?>
-                            </span>
+                        <div class="col-md-4">
+                            <div class="card border-0 bg-light">
+                                <div class="card-body p-3">
+                                    <small class="text-muted d-block mb-1">
+                                        <i class="fas fa-info-circle me-1"></i>Current Status
+                                    </small>
+                                    <?php
+                                    $task_status_db = $case_task_data['task_status'] ?? 'PENDING';
+                                    $task_data_json = json_decode($case_task_data['task_data'] ?? '{}', true);
+                                    $task_status_display = get_task_status_display($task_status_db, $task_data_json);
+
+                                    // Map display status to badge color
+                                    $status_class = 'warning';
+                                    if ($task_status_display == 'Reviewed')
+                                        $status_class = 'success';
+                                    elseif ($task_status_display == 'Verified')
+                                        $status_class = 'primary';
+                                    elseif ($task_status_display == 'Assigned')
+                                        $status_class = 'info';
+                                    elseif ($task_status_display == 'Fresh Case')
+                                        $status_class = 'warning';
+                                    elseif ($task_status_db == 'REJECTED')
+                                        $status_class = 'danger';
+                                    ?>
+                                    <span class="badge bg-<?php echo $status_class; ?> fs-6">
+                                        <?php echo htmlspecialchars($task_status_display); ?>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card border-0 bg-light">
+                                <div class="card-body p-3">
+                                    <small class="text-muted d-block mb-1">
+                                        <i class="fas fa-building me-1"></i>Client
+                                    </small>
+                                    <strong class="d-block"><?php echo htmlspecialchars($client_name); ?></strong>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <hr>
+                    <hr class="my-4">
 
                     <!-- Edit Form -->
                     <form id="editTaskForm" method="POST" action="save_case_step.php">
@@ -147,62 +202,80 @@ if (isset($_SESSION['error_message'])) {
                         <input type="hidden" name="case_id" value="<?php echo $case_id; ?>">
                         <input type="hidden" name="task_id" value="<?php echo $task_id; ?>">
                         <input type="hidden" name="client_id" value="<?php echo $client_id; ?>">
-                        
+
                         <div id="formError" class="alert alert-danger" style="display:none;"></div>
                         <div id="formSuccess" class="alert alert-success" style="display:none;"></div>
 
-                        <!-- Task Status and Assignment -->
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label"><strong>Task Status</strong></label>
-                                <select name="task_status" class="form-select">
-                                    <option value="PENDING" <?php echo ($case_task_data['task_status'] ?? 'PENDING') == 'PENDING' ? 'selected' : ''; ?>>PENDING</option>
-                                    <option value="IN_PROGRESS" <?php echo ($case_task_data['task_status'] ?? 'PENDING') == 'IN_PROGRESS' ? 'selected' : ''; ?>>IN_PROGRESS</option>
-                                    <option value="COMPLETED" <?php echo ($case_task_data['task_status'] ?? 'PENDING') == 'COMPLETED' ? 'selected' : ''; ?>>COMPLETED</option>
-                                    <option value="REJECTED" <?php echo ($case_task_data['task_status'] ?? 'PENDING') == 'REJECTED' ? 'selected' : ''; ?>>REJECTED</option>
-                                </select>
+                        <!-- Task Status and Assignment Section -->
+                        <div class="card border mb-4">
+                            <div class="card-header bg-white py-2">
+                                <h6 class="mb-0 fw-bold">
+                                    <i class="fas fa-cog text-primary me-2"></i>Task Configuration
+                                </h6>
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label"><strong>Assign To Verifier</strong></label>
-                                <select name="assigned_to" class="form-select">
-                                    <option value="">-- Not Assigned --</option>
-                                    <?php
-                                    // Get all active verifiers
-                                    global $con;
-                                    $verifier_sql = "
-                                        SELECT id, verifier_name, verifier_mobile, verifier_type
-                                        FROM verifier
-                                        WHERE status = 'ACTIVE'
-                                        ORDER BY verifier_name ASC
-                                    ";
-                                    $verifier_res = mysqli_query($con, $verifier_sql);
-                                    if ($verifier_res && mysqli_num_rows($verifier_res) > 0) {
-                                        while ($verifier = mysqli_fetch_assoc($verifier_res)) {
-                                            $selected = ($case_task_data['assigned_to'] ?? 0) == $verifier['id'] ? 'selected' : '';
-                                            $display_name = htmlspecialchars($verifier['verifier_name']);
-                                            if (!empty($verifier['verifier_mobile'])) {
-                                                $display_name .= ' (' . htmlspecialchars($verifier['verifier_mobile']) . ')';
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold">
+                                            <i class="fas fa-info-circle text-info me-1"></i>Task Status
+                                        </label>
+                                        <select name="task_status" class="form-select">
+                                            <option value="PENDING" <?php echo ($case_task_data['task_status'] ?? 'PENDING') == 'PENDING' ? 'selected' : ''; ?>>Fresh Case</option>
+                                            <option value="IN_PROGRESS" <?php echo ($case_task_data['task_status'] ?? 'PENDING') == 'IN_PROGRESS' ? 'selected' : ''; ?>>Assigned</option>
+                                            <option value="VERIFICATION_COMPLETED" <?php echo ($case_task_data['task_status'] ?? 'PENDING') == 'VERIFICATION_COMPLETED' ? 'selected' : ''; ?>>Verified</option>
+                                            <option value="COMPLETED" <?php echo ($case_task_data['task_status'] ?? 'PENDING') == 'COMPLETED' ? 'selected' : ''; ?>>Reviewed</option>
+                                            <option value="REJECTED" <?php echo ($case_task_data['task_status'] ?? 'PENDING') == 'REJECTED' ? 'selected' : ''; ?>>Rejected</option>
+                                        </select>
+                                        <small class="text-muted">Select the current status of this task</small>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold">
+                                            <i class="fas fa-user-check text-success me-1"></i>Assign To Verifier
+                                        </label>
+                                        <select name="assigned_to" class="form-select">
+                                            <option value="">-- Not Assigned --</option>
+                                            <?php
+                                            // Get all active verifiers
+                                            global $con;
+                                            $verifier_sql = "
+                                                SELECT id, verifier_name, verifier_mobile, verifier_type
+                                                FROM verifier
+                                                WHERE status = 'ACTIVE'
+                                                ORDER BY verifier_name ASC
+                                            ";
+                                            $verifier_res = mysqli_query($con, $verifier_sql);
+                                            if ($verifier_res && mysqli_num_rows($verifier_res) > 0) {
+                                                while ($verifier = mysqli_fetch_assoc($verifier_res)) {
+                                                    $selected = ($case_task_data['assigned_to'] ?? 0) == $verifier['id'] ? 'selected' : '';
+                                                    $display_name = htmlspecialchars($verifier['verifier_name']);
+                                                    if (!empty($verifier['verifier_mobile'])) {
+                                                        $display_name .= ' (' . htmlspecialchars($verifier['verifier_mobile']) . ')';
+                                                    }
+                                                    echo '<option value="' . $verifier['id'] . '" ' . $selected . '>' . $display_name . '</option>';
+                                                }
                                             }
-                                            echo '<option value="' . $verifier['id'] . '" ' . $selected . '>' . $display_name . '</option>';
-                                        }
-                                    }
-                                    ?>
-                                </select>
+                                            ?>
+                                        </select>
+                                        <small class="text-muted">Select a verifier to assign this task</small>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Task Meta Fields -->
-                        <div class="row mb-3">
-                            <div class="col-12">
-                                <h5 class="mb-3"><i class="fas fa-list"></i> Task Fields</h5>
+                        <!-- Task Meta Fields Section -->
+                        <div class="card border mb-4">
+                            <div class="card-header bg-white py-2">
+                                <h6 class="mb-0 fw-bold">
+                                    <i class="fas fa-list text-primary me-2"></i>Task Fields
+                                </h6>
                             </div>
-                        </div>
+                            <div class="card-body">
 
-                        <div id="taskFieldsContainer">
-                            <?php
-                            // Get all task meta fields for this task
-                            global $con;
-                            $sql = "
+                                <div id="taskFieldsContainer">
+                                    <?php
+                                    // Get all task meta fields for this task
+                                    global $con;
+                                    $sql = "
                                 SELECT 
                                     field_name, 
                                     display_name, 
@@ -218,97 +291,145 @@ if (isset($_SESSION['error_message'])) {
                                 ORDER BY id ASC
                             ";
 
-                            $res = mysqli_query($con, $sql);
+                                    $res = mysqli_query($con, $sql);
 
-                            if ($res && mysqli_num_rows($res) > 0) {
-                                echo '<div class="row">';
-                                while ($row = mysqli_fetch_assoc($res)) {
-                                    $name = htmlspecialchars($row['field_name']);
-                                    $label = htmlspecialchars($row['display_name']);
-                                    $type = strtoupper(trim($row['input_type']));
-                                    $default_value = htmlspecialchars($row['default_value'] ?? '');
-                                    $is_required = (strtoupper($row['is_required'] ?? 'NO') == 'YES');
-                                    
-                                    // Get existing value
-                                    $existing_value = isset($existing_task_data[$row['field_name']]) 
-                                        ? htmlspecialchars($existing_task_data[$row['field_name']]) 
-                                        : $default_value;
-                                    
-                                    // Determine column width
-                                    $col_class = 'col-md-6';
-                                    if ($type == 'TEXTAREA') {
-                                        $col_class = 'col-md-12';
-                                    }
-                                    
-                                    echo '<div class="' . $col_class . ' mb-3">';
-                                    echo '<label class="form-label"><strong>' . $label . '</strong>';
-                                    if ($is_required) {
-                                        echo ' <span class="text-danger">*</span>';
-                                    }
-                                    
-                                    // Show field source badges
-                                    $badges = [];
-                                    if ($row['by_client'] == 'YES') $badges[] = '<span class="badge bg-primary">Client</span>';
-                                    if ($row['by_verifier'] == 'YES') $badges[] = '<span class="badge bg-info">Verifier</span>';
-                                    if ($row['by_findings'] == 'YES') $badges[] = '<span class="badge bg-success">Findings</span>';
-                                    if (!empty($badges)) {
-                                        echo ' ' . implode(' ', $badges);
-                                    }
-                                    
-                                    echo '</label>';
-                                    
-                                    // Generate input field
-                                    switch ($type) {
-                                        case 'DATE':
-                                            echo '<input type="date" name="task_meta[' . $name . ']" class="form-control" value="' . $existing_value . '" ' . ($is_required ? 'required' : '') . '>';
-                                            break;
-                                            
-                                        case 'NUMBER':
-                                            echo '<input type="number" name="task_meta[' . $name . ']" class="form-control" value="' . $existing_value . '" step="any" ' . ($is_required ? 'required' : '') . '>';
-                                            break;
-                                            
-                                        case 'SELECT':
-                                            echo '<select name="task_meta[' . $name . ']" class="form-select" ' . ($is_required ? 'required' : '') . '>';
-                                            echo '<option value="">Select ' . $label . '</option>';
-                                            // TODO: Load options from master/config if available
-                                            if (!empty($existing_value)) {
-                                                echo '<option value="' . $existing_value . '" selected>' . $existing_value . '</option>';
+                                    if ($res && mysqli_num_rows($res) > 0) {
+                                        echo '<div class="row">';
+                                        while ($row = mysqli_fetch_assoc($res)) {
+                                            $name = htmlspecialchars($row['field_name']);
+                                            $label = htmlspecialchars($row['display_name']);
+                                            $type = strtoupper(trim($row['input_type']));
+                                            $default_value = htmlspecialchars($row['default_value'] ?? '');
+                                            $is_required = (strtoupper($row['is_required'] ?? 'NO') == 'YES');
+
+                                            // Get existing value
+                                            $existing_value = isset($existing_task_data[$row['field_name']])
+                                                ? htmlspecialchars($existing_task_data[$row['field_name']])
+                                                : $default_value;
+
+                                            // Determine if it is a financial table
+                                            $is_json_table = false;
+                                            if ($type == 'JSON_TABLE' || $type == 'COMPARISON_TABLE') {
+                                                $is_json_table = true;
+                                            } else {
+                                                // Check for valid JSON structure in existing or default value
+                                                $check_val = $existing_value ?: $default_value;
+                                                if (!empty($check_val) && (strpos($check_val, '{') === 0 || strpos($check_val, '[') === 0)) {
+                                                    $decoded = json_decode(htmlspecialchars_decode($check_val), true);
+                                                    if (is_array($decoded)) {
+                                                        if (isset($decoded['P & L Statement']) || isset($decoded['Balance Sheet Statement'])) {
+                                                            $is_json_table = true;
+                                                        } else {
+                                                            $first_row = @reset($decoded);
+                                                            if (is_array($first_row) && isset($first_row['section']) && isset($first_row['particular'])) {
+                                                                $is_json_table = true;
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
-                                            echo '</select>';
-                                            break;
-                                            
-                                        case 'TEXTAREA':
-                                            echo '<textarea name="task_meta[' . $name . ']" class="form-control" rows="3" ' . ($is_required ? 'required' : '') . '>' . $existing_value . '</textarea>';
-                                            break;
-                                            
-                                        case 'TEXT':
-                                        default:
-                                            echo '<input type="text" name="task_meta[' . $name . ']" class="form-control" value="' . $existing_value . '" ' . ($is_required ? 'required' : '') . '>';
-                                            break;
-                                    }
-                                    
-                                    echo '</div>';
-                                }
-                                echo '</div>';
-                            } else {
-                                echo '<div class="alert alert-info">';
-                                echo '<i class="fas fa-info-circle"></i> No fields configured for this task.';
-                                echo '</div>';
-                            }
-                            ?>
-                        </div>
 
-                        <!-- Form Actions -->
-                        <div class="row mt-4">
-                            <div class="col-12">
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="fas fa-save"></i> Update Task
-                                </button>
-                                <a href="add_new_case.php?step=3&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>" class="btn btn-secondary">
-                                    <i class="fas fa-times"></i> Cancel
-                                </a>
+                                            // Determine column width
+                                            $col_class = 'col-md-6';
+                                            if ($type == 'TEXTAREA' || $is_json_table) {
+                                                $col_class = 'col-md-12';
+                                            }
+
+                                            echo '<div class="' . $col_class . ' mb-3">';
+                                            echo '<label class="form-label"><strong>' . $label . '</strong>';
+                                            if ($is_required) {
+                                                echo ' <span class="text-danger">*</span>';
+                                            }
+
+                                            // Show field source badges
+                                            $badges = [];
+                                            if ($row['by_client'] == 'YES')
+                                                $badges[] = '<span class="badge bg-primary">Client</span>';
+                                            if ($row['by_verifier'] == 'YES')
+                                                $badges[] = '<span class="badge bg-info">Verifier</span>';
+                                            if ($row['by_findings'] == 'YES')
+                                                $badges[] = '<span class="badge bg-success">Findings</span>';
+                                            if (!empty($badges)) {
+                                                echo ' ' . implode(' ', $badges);
+                                            }
+
+                                            echo '</label>';
+
+                                            // Generate input field
+                                            switch ($type) {
+                                                case 'DATE':
+                                                    echo '<input type="date" name="task_meta[' . $name . ']" class="form-control" value="' . $existing_value . '" ' . ($is_required ? 'required' : '') . '>';
+                                                    break;
+
+                                                case 'NUMBER':
+                                                    echo '<input type="number" name="task_meta[' . $name . ']" class="form-control" value="' . $existing_value . '" step="any" ' . ($is_required ? 'required' : '') . '>';
+                                                    break;
+
+                                                case 'SELECT':
+                                                    echo '<select name="task_meta[' . $name . ']" class="form-select" ' . ($is_required ? 'required' : '') . '>';
+                                                    echo '<option value="">Select ' . $label . '</option>';
+                                                    // TODO: Load options from master/config if available
+                                                    if (!empty($existing_value)) {
+                                                        echo '<option value="' . $existing_value . '" selected>' . $existing_value . '</option>';
+                                                    }
+                                                    echo '</select>';
+                                                    break;
+
+                                                case 'TEXTAREA':
+                                                    echo '<textarea name="task_meta[' . $name . ']" class="form-control" rows="3" ' . ($is_required ? 'required' : '') . '>' . $existing_value . '</textarea>';
+                                                    break;
+
+                                                case 'JSON_TABLE':
+                                                case 'COMPARISON_TABLE':
+                                                case 'TEXT':
+                                                default:
+                                                    if ($is_json_table) {
+                                                        $config_obj = json_decode(htmlspecialchars_decode($default_value ?: '{}'), true);
+                                                        $config_js = json_encode($config_obj ?: new stdClass());
+                                                        $json_data = isset($existing_task_data[$row['field_name']]) ? json_encode($existing_task_data[$row['field_name']]) : 'null';
+
+                                                        echo '<div id="json_table_container_' . $name . '" class="json-table-wrapper"></div>';
+                                                        echo '<input type="hidden" name="task_meta[' . $name . ']" id="json_table_input_' . $name . '" value="">';
+                                                        echo '<script>
+                                                    (function() {
+                                                        const initTable = () => {
+                                                            if (typeof initJsonTable === "function") {
+                                                                initJsonTable("' . $name . '", ' . $config_js . ', ' . $json_data . ');
+                                                            } else {
+                                                                setTimeout(initTable, 100);
+                                                            }
+                                                        };
+                                                        initTable();
+                                                    })();
+                                                </script>';
+                                                    } else {
+                                                        echo '<input type="text" name="task_meta[' . $name . ']" class="form-control" value="' . $existing_value . '" ' . ($is_required ? 'required' : '') . '>';
+                                                    }
+                                                    break;
+                                            }
+
+                                            echo '</div>';
+                                        }
+                                        echo '</div>';
+                                    } else {
+                                        echo '<div class="alert alert-info">';
+                                        echo '<i class="fas fa-info-circle"></i> No fields configured for this task.';
+                                        echo '</div>';
+                                    }
+                                    ?>
+                                </div>
                             </div>
-                        </div>
+
+                            <!-- Form Actions -->
+                            <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+                                <a href="add_new_case.php?step=3&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>"
+                                    class="btn btn-outline-secondary">
+                                    <i class="fas fa-times me-1"></i> Cancel
+                                </a>
+                                <button type="submit" class="btn btn-primary px-4">
+                                    <i class="fas fa-save me-1"></i> Update Task
+                                </button>
+                            </div>
                     </form>
                 </div>
             </div>
@@ -317,75 +438,74 @@ if (isset($_SESSION['error_message'])) {
 </div>
 
 <script>
-// Handle form submission with AJAX
-document.getElementById('editTaskForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    
-    var form = this;
-    var formData = new FormData(form);
-    var errorDiv = document.getElementById('formError');
-    var successDiv = document.getElementById('formSuccess');
-    
-    // Hide previous messages
-    errorDiv.style.display = 'none';
-    successDiv.style.display = 'none';
-    
-    // Show loading
-    var submitBtn = form.querySelector('button[type="submit"]');
-    var originalText = submitBtn.innerHTML;
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-    
-    // Submit via AJAX
-    $.ajax({
-        url: 'save_case_step.php',
-        type: 'POST',
-        data: formData,
-        processData: false,
-        contentType: false,
-        dataType: 'json',
-        success: function(response) {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = originalText;
-            
-            if (response && (response.status === 'success' || response.success)) {
-                successDiv.innerHTML = '<i class="fas fa-check-circle"></i> ' + (response.message || 'Task updated successfully!');
-                successDiv.style.display = 'block';
-                
-                // Redirect after short delay
-                setTimeout(function() {
-                    window.location.href = 'add_new_case.php?step=3&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>';
-                }, 1500);
-            } else {
-                errorDiv.innerHTML = '<i class="fas fa-exclamation-circle"></i> ' + (response.message || 'Failed to update task');
-                errorDiv.style.display = 'block';
-            }
-        },
-        error: function(xhr, status, error) {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = originalText;
-            
-            var errorMsg = 'Error: ' + error + ' (Status: ' + xhr.status + ')';
-            
-            // Try to parse error response
-            try {
-                var errorResponse = JSON.parse(xhr.responseText);
-                if (errorResponse.message) {
-                    errorMsg = errorResponse.message;
+    // Handle form submission with AJAX
+    document.getElementById('editTaskForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+
+        var form = this;
+        var formData = new FormData(form);
+        var errorDiv = document.getElementById('formError');
+        var successDiv = document.getElementById('formSuccess');
+
+        // Hide previous messages
+        errorDiv.style.display = 'none';
+        successDiv.style.display = 'none';
+
+        // Show loading
+        var submitBtn = form.querySelector('button[type="submit"]');
+        var originalText = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+        // Submit via AJAX
+        $.ajax({
+            url: 'save_case_step.php',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            dataType: 'json',
+            success: function (response) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+
+                if (response && (response.status === 'success' || response.success)) {
+                    successDiv.innerHTML = '<i class="fas fa-check-circle"></i> ' + (response.message || 'Task updated successfully!');
+                    successDiv.style.display = 'block';
+
+                    // Redirect after short delay
+                    setTimeout(function () {
+                        window.location.href = 'add_new_case.php?step=3&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>';
+                    }, 1500);
+                } else {
+                    errorDiv.innerHTML = '<i class="fas fa-exclamation-circle"></i> ' + (response.message || 'Failed to update task');
+                    errorDiv.style.display = 'block';
                 }
-            } catch(e) {
-                // Use default error message
+            },
+            error: function (xhr, status, error) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+
+                var errorMsg = 'Error: ' + error + ' (Status: ' + xhr.status + ')';
+
+                // Try to parse error response
+                try {
+                    var errorResponse = JSON.parse(xhr.responseText);
+                    if (errorResponse.message) {
+                        errorMsg = errorResponse.message;
+                    }
+                } catch (e) {
+                    // Use default error message
+                }
+
+                errorDiv.innerHTML = '<i class="fas fa-exclamation-circle"></i> ' + errorMsg;
+                errorDiv.style.display = 'block';
+                console.error('AJAX Error:', xhr.responseText);
             }
-            
-            errorDiv.innerHTML = '<i class="fas fa-exclamation-circle"></i> ' + errorMsg;
-            errorDiv.style.display = 'block';
-            console.error('AJAX Error:', xhr.responseText);
-        }
+        });
+
+        return false;
     });
-    
-    return false;
-});
 </script>
 
 <?php require_once('../system/footer.php'); ?>
-
