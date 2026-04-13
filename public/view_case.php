@@ -203,20 +203,37 @@ if (isset($_SESSION['error_message'])) {
             <a href="case_manage.php" class="btn btn-outline-secondary btn-sm">
                 <i class="fas fa-arrow-left me-1"></i> Back
             </a>
-            <?php if ($template_id): ?>
-                <a href="generate_report.php?template_id=<?php echo $template_id; ?>&case_id=<?php echo $case_id; ?>" class="btn btn-success btn-sm" target="_blank" title="Generate Report using <?php echo htmlspecialchars($template_name); ?>">
+            
+            <?php 
+            // Unified Report Link
+            $report_url = "";
+            $is_jio = (stripos($client_name, 'Jio') !== false);
+            
+            if ($is_jio) {
+                // Jio uses the new High-Fidelity PDF Engine
+                $report_url = "jio_report_export.php?case_id=" . $case_id;
+            } elseif ($template_id) {
+                // Fallback to standard Report template
+                $report_url = "generate_report.php?template_id=" . $template_id . "&case_id=" . $case_id;
+            }
+            ?>
+            
+            <?php if ($report_url): ?>
+                <a href="<?php echo $report_url; ?>" class="btn btn-success btn-sm" target="_blank" title="Download Report in Professional PDF Format">
                     <i class="fas fa-file-pdf me-1"></i> Generate Report
                 </a>
             <?php else: ?>
-                <button class="btn btn-success btn-sm" disabled title="No template configured">
+                <button class="btn btn-success btn-sm" disabled title="No report template configured">
                     <i class="fas fa-file-pdf me-1"></i> Generate Report
                 </button>
             <?php endif; ?>
-            <a href="add_new_case.php?step=2&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>" class="btn btn-warning btn-sm" title="Edit Case Information">
-                <i class="fas fa-edit me-1"></i> Edit Info
+
+            <a href="mis_export.php?case_id=<?php echo $case_id; ?>" class="btn btn-dark btn-sm" target="_blank" title="Download MIS with Client Format Auto mapped">
+                <i class="fas fa-file-excel me-1"></i> Download MIS
             </a>
-            <a href="add_new_case.php?step=3&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>" class="btn btn-primary btn-sm" title="Manage Tasks">
-                <i class="fas fa-tasks me-1"></i> Manage Tasks
+
+            <a href="add_new_case.php?step=2&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>" class="btn btn-warning btn-sm" title="Edit Case Information">
+                <i class="fas fa-edit me-1"></i> Edit
             </a>
         </div>
     </div>

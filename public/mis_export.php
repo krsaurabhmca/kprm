@@ -24,21 +24,38 @@ try {
         die("PhpSpreadsheet library not found. Please run 'composer install'.");
     }
 
+    $date_from = isset($_GET['date_from']) ? $_GET['date_from'] : date('Y-m-d', strtotime('-30 days'));
+    $date_to = isset($_GET['date_to']) ? $_GET['date_to'] : date('Y-m-d');
+    $f_client_id = isset($_GET['client_id']) ? intval($_GET['client_id']) : 0;
+    $f_case_id = isset($_GET['case_id']) ? intval($_GET['case_id']) : 0;
+
     // Build SQL query for cases
+    $where = "c.status != 'DELETED'";
+    if ($f_case_id > 0) {
+        $where .= " AND c.id = $f_case_id";
+    } else {
+        $where .= " AND DATE(c.created_at) BETWEEN '$date_from' AND '$date_to'";
+        if ($f_client_id > 0) {
+            $where .= " AND c.client_id = $f_client_id";
+        }
+    }
+
     $sql_cases = "
         SELECT 
             c.id as case_id,
             c.application_no,
-            c.created_at as case_received_date,
             c.case_info,
+            c.created_at as case_received_date,
             c.case_status,
             cl.name as client_name,
+            cl.positve_status,
+            cl.negative_status,
+            cl.cnv_status,
             u.user_name as creator_name
         FROM cases c
         LEFT JOIN clients cl ON c.client_id = cl.id
         LEFT JOIN op_user u ON c.created_by = u.id
-        WHERE c.status != 'DELETED'
-        AND DATE(c.created_at) BETWEEN '$date_from' AND '$date_to'
+        WHERE $where
         ORDER BY c.created_at DESC
     ";
 
@@ -100,7 +117,11 @@ try {
     $col = 'A';
     foreach ($headers as $header) {
         $sheet->setCellValue($col . '1', $header);
-        $sheet->getColumnDimension($col)->setAutoSize(true);
+        if ($col !== 'N') { // Auto-size everything except Comments
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        } else {
+            $sheet->getColumnDimension($col)->setWidth(50); // Fixed width for Comments
+        }
         $col++;
     }
     $sheet->getStyle('A1:' . (--$col) . '1')->applyFromArray($headerStyle);
@@ -121,12 +142,32 @@ try {
         $latest_reviewed_at = null;
         $extra_checks_list = [];
         
+        $has_negative = false;
+        $all_positive = true;
+        $has_any_reviewed = false;
+        $has_any_pending = (empty($case_tasks));
+        
         $remark_sr = 1;
         foreach ($case_tasks as $task) {
             $t_name = strtoupper(trim($task['task_name']));
             $task_counts[$t_name] = ($task_counts[$t_name] ?? 0) + 1;
             
             $t_data = json_decode($task['task_data'] ?? '{}', true);
+            $t_review_status = strtoupper($t_data['review_status'] ?? '');
+
+            if (!empty($t_review_status)) {
+                $has_any_reviewed = true;
+                if ($t_review_status == 'NEGATIVE') {
+                    $has_negative = true;
+                }
+                if ($t_review_status != 'POSITIVE') {
+                    $all_positive = false;
+                }
+            } else {
+                $has_any_pending = true;
+                $all_positive = false;
+            }
+
             if (!empty($t_data['review_remarks'])) {
                 $remarks_list[] = $remark_sr . ". " . $t_name . " - " . $t_data['review_remarks'];
                 $remark_sr++;
@@ -157,30 +198,81 @@ try {
         }
         $initiation_doc_str = trim($initiation_doc_str);
 
-        // Map data
-        $user_name = $row['creator_name'] ?: 'N/A';
-        $app_id = $row['application_no'] ?: 'N/A';
-        $customer_name = $case_info['applicant_name'] ?? $row['client_name'] ?? 'N/A';
-        $location = $case_info['location'] ?? $case_info['city'] ?? 'N/A';
-        $product = $case_info['product_smebledi'] ?? $case_info['product'] ?? 'N/A';
-        $agency_name = !empty($agencies) ? implode(', ', array_unique($agencies)) : 'Not Assigned';
-        $login_month = date('F', strtotime($row['case_received_date']));
-        $received_date = date('d-m-Y', strtotime($row['case_received_date']));
-        $rcu_send = !empty($rcu_send_dates) ? date('d-m-Y', min($rcu_send_dates)) : 'N/A';
+        // Map row data using fallbacks that prefer manually entered form data (as seen in screenshots)
+        $user_name = $case_info['user_name'] ?? $row['creator_name'] ?: 'N/A';
+        $app_id = $case_info['app_id'] ?? $case_info['application_id'] ?? $row['application_no'] ?: 'N/A';
         
-        // TAT
-        $tat = 'Pending';
+        // Customer Name fallbacks
+        $customer_name = $case_info['customer_name'] 
+            ?? $case_info['applicant_name'] 
+            ?? $case_info['name_of_applicant'] 
+            ?? $row['client_name'] 
+            ?? 'N/A';
+            
+        $location = $case_info['location'] ?? $case_info['city'] ?? 'N/A';
+        $product = $case_info['product'] ?? $case_info['product_smebledi'] ?? 'N/A';
+
+        // Agency Name priority: Form > Assigned Tasks > Client Unit
+        $agency_name = $case_info['rcu_agency_name'] 
+            ?? $case_info['rcu_agency'] 
+            ?? (!empty($agencies) ? implode(', ', array_unique($agencies)) : ($case_info['unit_name'] ?? $row['client_name']));
+        
+        $login_month = $case_info['login_month'] ?? date('F', strtotime($row['case_received_date']));
+        $received_date = $case_info['received_date'] ?? date('d-m-Y', strtotime($row['case_received_date']));
+
+        $rcu_send = $case_info['rcu_send'] ?? (!empty($rcu_send_dates) ? date('d-m-Y', min($rcu_send_dates)) : 'N/A');
+
+        // Improved TAT: Show hours/days even if pending
+        $d1 = new DateTime($row['case_received_date']);
         if ($is_fully_completed && $latest_reviewed_at) {
-            $d1 = new DateTime($row['case_received_date']);
             $d2 = new DateTime(date('Y-m-d H:i:s', $latest_reviewed_at));
-            $diff = $d1->diff($d2);
-            $tat = $diff->days . " Days";
+            $is_pending_tat = false;
+        } else {
+            $d2 = new DateTime(); // Current time
+            $is_pending_tat = true;
         }
         
-        $report_status = $row['case_status'];
+        $diff = $d1->diff($d2);
+        $tat_days = $diff->days;
+        $tat_hours = $diff->h;
+        
+        if ($tat_days > 0) {
+            $tat = $tat_days . 'd ' . $tat_hours . 'h';
+        } else {
+            $tat = $tat_hours . 'h ' . $diff->i . 'm';
+        }
+        
+        if ($is_pending_tat) {
+            $tat = "(Pending) " . $tat;
+        }
+        
+        // Calculate Overall Report Status
+        $pos_word = $row['positve_status'] ?: 'Positive';
+        $neg_word = $row['negative_status'] ?: 'Negative';
+        $cnv_word = $row['cnv_status'] ?: 'CNV';
+
+        if ($has_any_pending) {
+            $report_status = 'Pending';
+        } elseif ($has_negative) {
+            $report_status = $neg_word;
+        } elseif ($all_positive) {
+            $report_status = $pos_word;
+        } else {
+            $report_status = $cnv_word;
+        }
+
         $report_comments = implode("\n\n", $remarks_list);
-        $loan_amount = $case_info['loan_amount'] ?? 'N/A';
-        $extra_checks = implode(", ", array_unique($extra_checks_list));
+        
+        // Loan Amount fallbacks
+        $loan_amount = $case_info['loan_amount_applied'] 
+            ?? $case_info['loan_amount'] 
+            ?? $case_info['loan_amt'] 
+            ?? $case_info['amount'] 
+            ?? $case_info['applied_amount'] 
+            ?? 'N/A';
+            
+        $extra_checks = $case_info['extra_checks'] ?? implode(", ", array_unique($extra_checks_list));
+        if (empty($extra_checks)) $extra_checks = 'N/A';
 
         $sheet->setCellValue('A' . $row_index, $sr++);
         $sheet->setCellValue('B' . $row_index, $user_name);
@@ -206,12 +298,19 @@ try {
     }
 
     // Output
-    $filename = "KPRM_MIS_Report_" . date('Y-m-d_His') . ".xlsx";
+    if (ob_get_length()) ob_end_clean();    // Generate filename - use App ID if it's a single case
+    $file_prefix = 'MIS_Report';
+    if ($f_case_id > 0 && !empty($cases_data)) {
+        $first_case = $cases_data[0];
+        $case_info_obj = json_decode($first_case['case_info'] ?? '{}', true);
+        $found_app_id = $case_info_obj['app_id'] ?? $case_info_obj['application_id'] ?? $first_case['application_no'] ?? 'Case_'.$f_case_id;
+        $file_prefix = preg_replace('/[^a-zA-Z0-9_-]/', '_', $found_app_id) . '_MIS';
+    }
     
-    if (ob_get_length()) ob_end_clean(); // Clear any existing output
+    $file_name = $file_prefix . '_' . date('d-m-Y') . '.xlsx';
     
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Content-Disposition: attachment; filename="' . $file_name . '"');
     header('Cache-Control: max-age=0');
     
     $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);

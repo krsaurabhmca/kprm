@@ -6,25 +6,33 @@
 
 require_once("../system/all_header.php");
 
-// Default date range (last 30 days)
+// Filters
 $date_from = isset($_GET['date_from']) ? $_GET['date_from'] : date('Y-m-d', strtotime('-30 days'));
 $date_to = isset($_GET['date_to']) ? $_GET['date_to'] : date('Y-m-d');
+$f_client_id = isset($_GET['client_id']) ? intval($_GET['client_id']) : 0;
 
 // Build SQL query for cases
+$where = "c.status != 'DELETED' AND DATE(c.created_at) BETWEEN '$date_from' AND '$date_to'";
+if ($f_client_id > 0) {
+    $where .= " AND c.client_id = $f_client_id";
+}
+
 $sql_cases = "
     SELECT 
         c.id as case_id,
         c.application_no,
-        c.created_at as case_received_date,
         c.case_info,
+        c.created_at as case_received_date,
         c.case_status,
         cl.name as client_name,
+        cl.positve_status,
+        cl.negative_status,
+        cl.cnv_status,
         u.user_name as creator_name
     FROM cases c
     LEFT JOIN clients cl ON c.client_id = cl.id
     LEFT JOIN op_user u ON c.created_by = u.id
-    WHERE c.status != 'DELETED'
-    AND DATE(c.created_at) BETWEEN '$date_from' AND '$date_to'
+    WHERE $where
     ORDER BY c.created_at DESC
 ";
 
@@ -98,13 +106,28 @@ $total_records = count($cases_data);
                         <label class="form-label small text-muted">Date To</label>
                         <input type="date" name="date_to" class="form-control" value="<?php echo $date_to; ?>">
                     </div>
-                    <div class="col-md-2">
-                        <button type="submit" class="btn btn-primary w-100">
-                            <i class="fas fa-filter me-2"></i> Filter
+                    <div class="col-md-3">
+                        <label class="form-label small text-muted">Client</label>
+                        <select name="client_id" class="form-select">
+                            <option value="0">All Clients</option>
+                            <?php 
+                            $cl_res = get_all('clients', 'id, name', ['status' => 'ACTIVE']);
+                            if ($cl_res['count'] > 0) {
+                                foreach ($cl_res['data'] as $cl) {
+                                    $selected = ($f_client_id == $cl['id']) ? 'selected' : '';
+                                    echo "<option value='{$cl['id']}' {$selected}>{$cl['name']}</option>";
+                                }
+                            }
+                            ?>
+                        </select>
+                    </div>
+                    <div class="col-md-1">
+                        <button type="submit" class="btn btn-primary w-100 p-2">
+                            <i class="fas fa-filter"></i>
                         </button>
                     </div>
-                    <div class="col-md-2">
-                        <a href="mis_report.php" class="btn btn-outline-secondary w-100">Reset</a>
+                    <div class="col-md-1">
+                        <a href="mis_report.php" class="btn btn-outline-secondary w-100 p-2">Reset</a>
                     </div>
                 </form>
             </div>
@@ -136,7 +159,7 @@ $total_records = count($cases_data);
                                 <th>RCU Send</th>
                                 <th>TAT</th>
                                 <th>Report Status</th>
-                                <th>Report Comments</th>
+                                <th style="width: 300px; min-width: 300px;">Report Comments</th>
                                 <th>Loan Amount</th>
                                 <th>Extra Checks</th>
                             </tr>
@@ -159,12 +182,32 @@ $total_records = count($cases_data);
                                     $latest_reviewed_at = null;
                                     $extra_checks_list = [];
 
+                                    $has_negative = false;
+                                    $all_positive = true;
+                                    $has_any_reviewed = false;
+                                    $has_any_pending = (empty($case_tasks)); // True if no tasks or any task is not reviewed
+
                                     $remark_sr = 1;
                                     foreach ($case_tasks as $task) {
                                         $t_name = strtoupper(trim($task['task_name']));
                                         $task_counts[$t_name] = ($task_counts[$t_name] ?? 0) + 1;
 
                                         $t_data = json_decode($task['task_data'] ?? '{}', true);
+                                        $t_review_status = strtoupper($t_data['review_status'] ?? '');
+
+                                        if (!empty($t_review_status)) {
+                                            $has_any_reviewed = true;
+                                            if ($t_review_status == 'NEGATIVE') {
+                                                $has_negative = true;
+                                            }
+                                            if ($t_review_status != 'POSITIVE') {
+                                                $all_positive = false;
+                                            }
+                                        } else {
+                                            $has_any_pending = true;
+                                            $all_positive = false;
+                                        }
+
                                         if (!empty($t_data['review_remarks'])) {
                                             $remarks_list[] = $remark_sr . ". " . $t_name . " - " . $t_data['review_remarks'];
                                             $remark_sr++;
@@ -198,32 +241,81 @@ $total_records = count($cases_data);
                                     }
                                     $initiation_doc_str = trim($initiation_doc_str);
 
-                                    // Map row data
-                                    $user_name = $row['creator_name'] ?: 'N/A';
-                                    $app_id = $row['application_no'] ?: 'N/A';
-                                    $customer_name = $case_info['applicant_name'] ?? $row['client_name'] ?? 'N/A';
+                                    // Map row data using fallbacks that prefer manually entered form data (as seen in screenshots)
+                                    $user_name = $case_info['user_name'] ?? $row['creator_name'] ?: 'N/A';
+                                    $app_id = $case_info['app_id'] ?? $case_info['application_id'] ?? $row['application_no'] ?: 'N/A';
+                                    
+                                    // Customer Name fallbacks
+                                    $customer_name = $case_info['customer_name'] 
+                                        ?? $case_info['applicant_name'] 
+                                        ?? $case_info['name_of_applicant'] 
+                                        ?? $row['client_name'] 
+                                        ?? 'N/A';
+                                        
                                     $location = $case_info['location'] ?? $case_info['city'] ?? 'N/A';
-                                    $product = $case_info['product_smebledi'] ?? $case_info['product'] ?? 'N/A';
+                                    $product = $case_info['product'] ?? $case_info['product_smebledi'] ?? 'N/A';
 
-                                    $agency_name = !empty($agencies) ? implode(', ', array_unique($agencies)) : 'Not Assigned';
-                                    $login_month = date('F', strtotime($row['case_received_date']));
-                                    $received_date = date('d-m-Y', strtotime($row['case_received_date']));
+                                    // Agency Name priority: Form > Assigned Tasks > Client Unit
+                                    $agency_name = $case_info['rcu_agency_name'] 
+                                        ?? $case_info['rcu_agency'] 
+                                        ?? (!empty($agencies) ? implode(', ', array_unique($agencies)) : ($case_info['unit_name'] ?? $row['client_name']));
+                                    
+                                    $login_month = $case_info['login_month'] ?? date('F', strtotime($row['case_received_date']));
+                                    $received_date = $case_info['received_date'] ?? date('d-m-Y', strtotime($row['case_received_date']));
 
-                                    $rcu_send = !empty($rcu_send_dates) ? date('d-m-Y', min($rcu_send_dates)) : 'N/A';
+                                    $rcu_send = $case_info['rcu_send'] ?? (!empty($rcu_send_dates) ? date('d-m-Y', min($rcu_send_dates)) : 'N/A');
 
-                                    // TAT
-                                    $tat = 'Pending';
+                                    // Improved TAT: Show hours/days even if pending
+                                    $d1 = new DateTime($row['case_received_date']);
                                     if ($is_fully_completed && $latest_reviewed_at) {
-                                        $d1 = new DateTime($row['case_received_date']);
                                         $d2 = new DateTime(date('Y-m-d H:i:s', $latest_reviewed_at));
-                                        $diff = $d1->diff($d2);
-                                        $tat = $diff->days . ' Days';
+                                        $is_pending_tat = false;
+                                    } else {
+                                        $d2 = new DateTime(); // Current time
+                                        $is_pending_tat = true;
+                                    }
+                                    
+                                    $diff = $d1->diff($d2);
+                                    $tat_days = $diff->days;
+                                    $tat_hours = $diff->h;
+                                    
+                                    if ($tat_days > 0) {
+                                        $tat = $tat_days . 'd ' . $tat_hours . 'h';
+                                    } else {
+                                        $tat = $tat_hours . 'h ' . $diff->i . 'm';
+                                    }
+                                    
+                                    // Calculate Overall Report Status
+                                    $pos_word = $row['positve_status'] ?: 'Positive';
+                                    $neg_word = $row['negative_status'] ?: 'Negative';
+                                    $cnv_word = $row['cnv_status'] ?: 'CNV';
+
+                                    if ($has_any_pending) {
+                                        $report_status = 'Pending';
+                                        $status_color = 'warning';
+                                    } elseif ($has_negative) {
+                                        $report_status = $neg_word;
+                                        $status_color = 'danger';
+                                    } elseif ($all_positive) {
+                                        $report_status = $pos_word;
+                                        $status_color = 'success';
+                                    } else {
+                                        $report_status = $cnv_word;
+                                        $status_color = 'info';
                                     }
 
-                                    $report_status = $row['case_status'];
                                     $report_comments = implode("\n\n", $remarks_list);
-                                    $loan_amount = $case_info['loan_amount'] ?? 'N/A';
-                                    $extra_checks = implode(", ", array_unique($extra_checks_list));
+                                    
+                                    // Loan Amount fallbacks
+                                    $loan_amount = $case_info['loan_amount_applied'] 
+                                        ?? $case_info['loan_amount'] 
+                                        ?? $case_info['loan_amt'] 
+                                        ?? $case_info['amount'] 
+                                        ?? $case_info['applied_amount'] 
+                                        ?? 'N/A';
+                                        
+                                    $extra_checks = $case_info['extra_checks'] ?? implode(", ", array_unique($extra_checks_list));
+                                    if (empty($extra_checks)) $extra_checks = 'N/A';
                                     ?>
                                     <tr>
                                         <td><?php echo $sr++; ?></td>
@@ -242,20 +334,12 @@ $total_records = count($cases_data);
                                         <td><?php echo $received_date; ?></td>
                                         <td><?php echo $rcu_send; ?></td>
                                         <td>
-                                            <span class="badge <?php echo $tat == 'Pending' ? 'bg-warning' : 'bg-success'; ?>">
+                                            <span
+                                                class="badge <?php echo $is_pending_tat ? 'bg-warning text-dark' : 'bg-success'; ?>">
                                                 <?php echo $tat; ?>
                                             </span>
                                         </td>
                                         <td>
-                                            <?php
-                                            $status_color = 'secondary';
-                                            if (strpos(strtoupper($report_status), 'POSITIVE') !== false || strtoupper($report_status) == 'COMPLETED')
-                                                $status_color = 'success';
-                                            if (strpos(strtoupper($report_status), 'NEGATIVE') !== false)
-                                                $status_color = 'danger';
-                                            if (strpos(strtoupper($report_status), 'PENDING') !== false || strtoupper($report_status) == 'IN_PROGRESS')
-                                                $status_color = 'warning';
-                                            ?>
                                             <span class="badge bg-<?php echo $status_color; ?>">
                                                 <?php echo htmlspecialchars($report_status); ?>
                                             </span>
@@ -269,7 +353,7 @@ $total_records = count($cases_data);
                                         <td class="fw-bold text-success"><?php echo $loan_amount; ?></td>
                                         <td><small><?php echo htmlspecialchars($extra_checks ?: 'N/A'); ?></small></td>
                                     </tr>
-                                <?php
+                                    <?php
                                 endforeach;
                             else:
                                 ?>
@@ -326,7 +410,8 @@ $total_records = count($cases_data);
         $('#btnExport').click(function () {
             const date_from = $('input[name="date_from"]').val();
             const date_to = $('input[name="date_to"]').val();
-            window.location.href = `mis_export.php?date_from=${date_from}&date_to=${date_to}`;
+            const client_id = $('select[name="client_id"]').val();
+            window.location.href = `mis_export.php?date_from=${date_from}&date_to=${date_to}&client_id=${client_id}`;
         });
 
         // Initialize DataTable for search/sort

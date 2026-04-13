@@ -142,138 +142,7 @@ if (!empty($review_remarks)) {
         <div class="row">
             <!-- Left Column: Review Information (3/4 Screen) -->
             <div class="col-lg-9 mb-3">
-                <!-- Task Details -->
-                <div class="card shadow-sm mb-3">
-                    <div class="card-header bg-primary text-white py-2">
-                        <h6 class="mb-0 fw-bold">
-                            <i class="fas fa-info-circle me-2"></i>Task Details
-                        </h6>
-                    </div>
-                    <div class="card-body">
-                        <div class="row mb-2">
-                            <div class="col-md-4">
-                                <label class="form-label text-muted small mb-0">Task Name</label>
-                                <div class="fw-bold"><?php echo htmlspecialchars($task_name); ?></div>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label text-muted small mb-0">Task Type</label>
-                                <div class="fw-bold"><?php echo htmlspecialchars($task_template_data['task_type'] ?? 'N/A'); ?></div>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label text-muted small mb-0">Current Status</label>
-                                <div>
-                                    <?php
-                                    $status_display = get_task_status_display($current_status, $task_data_json);
-                                    $status_badges = [
-                                        'Pending' => 'warning',
-                                        'Assigned' => 'info',
-                                        'Verified' => 'primary',
-                                        'Reviewed' => 'warning',
-                                        'Closed' => 'success'
-                                    ];
-                                    $badge_color = $status_badges[$status_display] ?? 'secondary';
-                                    ?>
-                                    <span class="badge bg-<?php echo $badge_color; ?>"><?php echo htmlspecialchars($status_display); ?></span>
-                                    <?php 
-                                    $task_type = $task_template_data['task_type'] ?? '';
-                                    if (strtoupper($task_type) == 'ITO' && stripos($task_name, 'Financial') !== false): 
-                                    ?>
-                                        <a href="financial_add.php?case_task_id=<?php echo $case_task_id; ?>" class="btn btn-sm btn-outline-info ms-2 py-0" style="font-size: 0.75rem;">
-                                            <i class="fas fa-file-invoice me-1"></i> Financial Entry
-                                        </a>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Task Meta Fields -->
-                        <?php
-                        // Get task meta fields
-                        $task_meta_fields = get_all('tasks_meta', '*', ['task_id' => $task_template_id, 'status' => 'ACTIVE'], 'id ASC');
-                        if ($task_meta_fields['count'] > 0):
-                        ?>
-                            <hr class="my-3">
-                            <h6 class="mb-2 text-muted small">
-                                <i class="fas fa-list-ul me-1"></i> Task Information
-                            </h6>
-                            <div class="row">
-                                <?php
-                                foreach ($task_meta_fields['data'] as $field) {
-                                    $field_value = isset($task_data_json[$field['field_name']]) ? $task_data_json[$field['field_name']] : '';
-                                    $is_table = (is_array($field_value) || (is_string($field_value) && (strpos($field_value, '[{"section"') === 0 || strpos($field_value, '{"') === 0)));
-                                    ?>
-                                    <div class="<?php echo $is_table ? 'col-12' : 'col-md-6'; ?> mb-3">
-                                        <label class="form-label text-muted small mb-0">
-                                            <?php echo htmlspecialchars($field['display_name'] ?? $field['field_name']); ?>
-                                        </label>
-                                        <div class="field-value p-2 bg-light border rounded">
-                                            <?php if($is_table): ?>
-                                                <?php 
-                                                    $field_id = str_replace(' ', '_', $field['field_name']);
-                                                    // Ensure we have a clean array for JS
-                                                    $clean_data = is_array($field_value) ? $field_value : json_decode($field_value, true);
-                                                    if (!$clean_data) $clean_data = null;
-                                                ?>
-                                                <div id="json_table_container_<?php echo $field_id; ?>"></div>
-                                                <input type="hidden" name="task_meta[<?php echo $field['field_name']; ?>]" id="json_table_input_<?php echo $field_id; ?>" value="<?php echo htmlspecialchars(is_array($field_value) ? json_encode($field_value) : $field_value); ?>">
-                                                <script>
-                                                    (function() {
-                                                        const fieldId = <?php echo json_encode($field_id); ?>;
-                                                        const config = <?php echo !empty($field['default_value']) ? $field['default_value'] : '{}'; ?>;
-                                                        const existingData = <?php echo json_encode($clean_data); ?>;
-                                                        
-                                                        const initFunc = function() {
-                                                            if (typeof initJsonTable === 'function') {
-                                                                initJsonTable(fieldId, config, existingData);
-                                                            } else {
-                                                                setTimeout(initFunc, 100);
-                                                            }
-                                                        };
-                                                        
-                                                        if (document.readyState === 'complete' || document.readyState === 'interactive') {
-                                                            initFunc();
-                                                        } else {
-                                                            document.addEventListener('DOMContentLoaded', initFunc);
-                                                        }
-                                                    })();
-                                                </script>
-                                            <?php else: ?>
-                                                <?php echo render_financial_table_readonly($field_value); ?>
-                                            <?php endif; ?>
-                                        </div>
-                                    </div>
-                                    <?php
-                                }
-                                ?>
-                            </div>
-                        <?php else: ?>
-                            <div class="text-center py-2">
-                                <small class="text-muted">No additional task fields configured</small>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
-                <!-- Verifier Remarks -->
-                <div class="card shadow-sm mb-3">
-                    <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
-                        <h6 class="mb-0 fw-bold">
-                            <i class="fas fa-comment-alt text-success me-2"></i>Verifier Remarks
-                        </h6>
-                        <button type="button" class="btn btn-sm btn-outline-primary" id="pasteImageBtn" title="Paste Image from Clipboard">
-                            <i class="fas fa-paste me-1"></i> Paste Image
-                        </button>
-                    </div>
-                    <div class="card-body">
-                        <?php if (!empty($verifier_remarks)): ?>
-                            <p class="mb-0"><?php echo nl2br(htmlspecialchars($verifier_remarks)); ?></p>
-                        <?php else: ?>
-                            <p class="text-muted mb-0"><em>No verifier remarks</em></p>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
-                <!-- Review Form -->
+                <!-- Review & Task Information Form -->
                 <div class="card shadow-sm">
                     <div class="card-header bg-warning text-dark py-2">
                         <h6 class="mb-0 fw-bold">
@@ -281,10 +150,86 @@ if (!empty($review_remarks)) {
                         </h6>
                     </div>
                     <div class="card-body">
-                        <form id="reviewForm" method="POST" action=".php">
+                        <form id="reviewForm" method="POST" action="save_task_review.php">
                             <input type="hidden" name="case_task_id" value="<?php echo $case_task_id; ?>">
                             <input type="hidden" name="case_id" value="<?php echo $case_id; ?>">
                             <input type="hidden" name="task_template_id" value="<?php echo $task_template_id; ?>">
+                            
+                            <!-- Task Meta Fields (Editable in Review) -->
+                            <?php if ($task_meta_fields['count'] > 0): ?>
+                                <h6 class="mb-3 text-muted border-bottom pb-2">
+                                    <i class="fas fa-edit me-1"></i> Edit Task Information / Financial Tables
+                                </h6>
+                                <div class="row mb-4">
+                                    <?php
+                                    foreach ($task_meta_fields['data'] as $field) {
+                                        $f_name = $field['field_name'];
+                                        $f_type = strtoupper(trim($field['input_type'] ?? ''));
+                                        $f_label = $field['display_name'] ?? $f_name;
+                                        $raw_val = isset($task_data_json[$f_name]) ? $task_data_json[$f_name] : '';
+                                        
+                                        // ROBUST TABLE DETECTION
+                                        $is_json_table = ($f_type == 'JSON_TABLE' || $f_type == 'COMPARISON_TABLE');
+                                        if (!$is_json_table && !empty($raw_val)) {
+                                            $check_data = $raw_val;
+                                            if (is_string($check_data) && (strpos($check_data, '{') === 0 || strpos($check_data, '[') === 0)) {
+                                                $check_data = json_decode($check_data, true);
+                                            }
+                                            if (is_array($check_data)) {
+                                                if (isset($check_data['P & L Statement']) || isset($check_data['Balance Sheet Statement'])) {
+                                                    $is_json_table = true;
+                                                } else {
+                                                    $first_r = @reset($check_data);
+                                                    if (is_array($first_r) && isset($first_r['section']) && isset($first_r['particular'])) {
+                                                        $is_json_table = true;
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        $field_id = preg_replace('/[^a-zA-Z0-9_]/', '_', $f_name);
+                                        ?>
+                                        <div class="<?php echo $is_json_table ? 'col-12' : 'col-md-6'; ?> mb-3">
+                                            <label class="form-label text-muted small mb-0 fw-bold">
+                                                <?php echo htmlspecialchars($f_label); ?>
+                                            </label>
+                                            <div class="field-value p-2 bg-light border rounded">
+                                                <?php if($is_json_table): ?>
+                                                    <?php 
+                                                        $clean_data = is_array($raw_val) ? $raw_val : json_decode($raw_val, true);
+                                                    ?>
+                                                    <div id="json_table_container_<?php echo $field_id; ?>"></div>
+                                                    <input type="hidden" name="task_meta[<?php echo $f_name; ?>]" id="json_table_input_<?php echo $field_id; ?>" value="">
+                                                    <script>
+                                                        (function() {
+                                                            const fid = <?php echo json_encode($field_id); ?>;
+                                                            const f_conf = <?php echo !empty($field['default_value']) ? $field['default_value'] : '{}'; ?>;
+                                                            const f_data = <?php echo json_encode($clean_data); ?>;
+                                                            
+                                                            const runInit = function() {
+                                                                if (typeof initJsonTable === 'function') {
+                                                                    initJsonTable(fid, f_conf, f_data);
+                                                                } else {
+                                                                    setTimeout(runInit, 150);
+                                                                }
+                                                            };
+                                                            runInit();
+                                                        })();
+                                                    </script>
+                                                <?php elseif($f_type == 'TEXTAREA'): ?>
+                                                    <textarea name="task_meta[<?php echo $f_name; ?>]" class="form-control form-control-sm"><?php echo htmlspecialchars($raw_val); ?></textarea>
+                                                <?php else: ?>
+                                                    <input type="text" name="task_meta[<?php echo $f_name; ?>]" class="form-control form-control-sm" value="<?php echo htmlspecialchars($raw_val); ?>">
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                    <?php } ?>
+                                </div>
+                            <?php endif; ?>
+
+                            <h6 class="mb-3 text-muted border-bottom pb-2">
+                                <i class="fas fa-check-double me-1"></i> Final Review Verdict
+                            </h6>
                             
                             <div class="mb-3">
                                 <label class="form-label fw-bold">Review Status <span class="text-danger">*</span></label>
@@ -307,9 +252,9 @@ if (!empty($review_remarks)) {
                                 <textarea name="review_remarks" id="review_remarks" class="form-control" rows="6" placeholder="Review remarks will be generated automatically based on selected status. You can edit as needed..."><?php echo htmlspecialchars($review_remarks); ?></textarea>
                             </div>
 
-                            <div class="d-grid">
-                                <button type="submit" class="btn btn-primary" id="submitBtn">
-                                    <i class="fas fa-save me-1"></i>Save Review & Complete Task
+                            <div class="d-grid mt-4">
+                                <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
+                                    <i class="fas fa-save me-1"></i> Save Review & Close Task
                                 </button>
                             </div>
                         </form>
