@@ -113,22 +113,28 @@ $client_id = $case_data ? $case_data['client_id'] : 0;
                                   ? htmlspecialchars($existing_task_data[$row['field_name']]) 
                                   : $default_value;
 
-                // Finance Table detection
+                // ROBUST TABLE DETECTION
                 $is_json_table = ($type == 'JSON_TABLE' || $type == 'COMPARISON_TABLE');
-                if (!$is_json_table) {
-                    $check_val = $existing_value ?: $default_value;
-                    if (!empty($check_val) && (strpos($check_val, '{') === 0 || strpos($check_val, '[') === 0)) {
-                        $decoded = json_decode(htmlspecialchars_decode($check_val), true);
-                        if (is_array($decoded)) {
-                            if (isset($decoded['P & L Statement']) || isset($decoded['Balance Sheet Statement'])) {
+                $raw_val = isset($existing_task_data[$row['field_name']]) ? $existing_task_data[$row['field_name']] : null;
+                
+                if (!$is_json_table && !empty($raw_val)) {
+                    $check_data = $raw_val;
+                    if (is_string($check_data) && (strpos($check_data, '{') === 0 || strpos($check_data, '[') === 0)) {
+                        $check_data = json_decode($check_data, true);
+                    }
+                    if (is_array($check_data)) {
+                        if (isset($check_data['P & L Statement']) || isset($check_data['Balance Sheet Statement'])) {
+                            $is_json_table = true;
+                        } else {
+                            $first_r = @reset($check_data);
+                            if (is_array($first_r) && isset($first_r['section']) && isset($first_r['particular'])) {
                                 $is_json_table = true;
-                            } else {
-                                $first_row = @reset($decoded);
-                                if (is_array($first_row) && isset($first_row['section'])) $is_json_table = true;
                             }
                         }
                     }
                 }
+
+                $field_id = preg_replace('/[^a-zA-Z0-9_]/', '_', $row['field_name']);
 
                 $col_class = ($type == 'TEXTAREA' || $is_json_table) ? 'col-12' : 'col-md-6';
                 ?>
@@ -156,15 +162,18 @@ $client_id = $case_data ? $case_data['client_id'] : 0;
                                 $config_js = json_encode($config_obj ?: new stdClass());
                                 $json_data = isset($existing_task_data[$row['field_name']]) ? json_encode($existing_task_data[$row['field_name']]) : 'null';
                                 ?>
-                                <div id="modal_json_table_container_<?php echo $name; ?>" class="json-table-wrapper"></div>
-                                <input type="hidden" name="task_meta[<?php echo $name; ?>]" id="modal_json_table_input_<?php echo $name; ?>" value="">
+                                <div id="modal_json_table_container_<?php echo $field_id; ?>" class="json-table-wrapper"></div>
+                                <input type="hidden" name="task_meta[<?php echo $f_name; ?>]" id="modal_json_table_input_<?php echo $field_id; ?>" value="">
                                 <script>
                                     (function() {
+                                        const f_id = <?php echo json_encode($field_id); ?>;
+                                        const f_conf = <?php echo !empty($row['default_value']) ? $row['default_value'] : '{}'; ?>;
+                                        const f_dt = <?php echo json_encode($raw_val); ?>;
                                         const initTbl = () => {
                                             if (typeof initJsonTable === "function") {
                                                 // Note: we use a different prefix for modal to avoid ID collisions
-                                                initJsonTable("<?php echo $name; ?>", <?php echo $config_js; ?>, <?php echo $json_data; ?>, "modal_json_table_");
-                                            } else { setTimeout(initTbl, 100); }
+                                                initJsonTable(f_id, f_conf, f_dt, "modal_json_table_");
+                                            } else { setTimeout(initTbl, 150); }
                                         };
                                         initTbl();
                                     })();

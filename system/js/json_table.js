@@ -44,9 +44,10 @@ function initJsonTable(fieldName, config, existingData, prefix = 'json_table_') 
         <thead>
             <tr class="jt-header-cols">
                 <th>Particular</th>
-                <th>Amount as per Provided copy</th>
-                <th>Amount as per ITO record</th>
-                <th>Remark</th>
+                <th style="width:120px">Amount (Provided)</th>
+                <th style="width:120px">Amount (ITO)</th>
+                <th style="width:100px">Diff</th>
+                <th>Remark / Auto-Status</th>
             </tr>
         </thead>
         <tbody>`;
@@ -54,7 +55,7 @@ function initJsonTable(fieldName, config, existingData, prefix = 'json_table_') 
     for (const section in config) {
         // Section Header
         html += `<tr>
-            <td colspan="4" class="jt-header-section">${section}</td>
+            <td colspan="5" class="jt-header-section">${section}</td>
         </tr>`;
         
         // Rows
@@ -66,6 +67,7 @@ function initJsonTable(fieldName, config, existingData, prefix = 'json_table_') 
                 <td class="jt-particular">${particular}</td>
                 <td><input type="text" class="jt-input jt-provided" value="${rowData.provided || ''}" placeholder="0"></td>
                 <td><input type="text" class="jt-input jt-ito" value="${rowData.ito || ''}" placeholder="0"></td>
+                <td class="jt-diff-cell text-center fw-bold" style="font-size:10px;">0.00</td>
                 <td><input type="text" class="jt-input jt-remark" value="${rowData.remark || ''}" placeholder="Remark"></td>
             </tr>`;
         });
@@ -85,36 +87,54 @@ function initJsonTable(fieldName, config, existingData, prefix = 'json_table_') 
             const rowKey = row.getAttribute('data-rowkey');
             const providedVal = row.querySelector('.jt-provided').value;
             const itoVal = row.querySelector('.jt-ito').value;
+            const diffCell = row.querySelector('.jt-diff-cell');
             const remarkInput = row.querySelector('.jt-remark');
             
             // Clean values for calculation (remove commas if any)
-            const p = parseFloat(providedVal.replace(/,/g, ''));
-            const i = parseFloat(itoVal.replace(/,/g, ''));
+            const pStr = providedVal.replace(/,/g, '');
+            const iStr = itoVal.replace(/,/g, '');
+            const p = parseFloat(pStr);
+            const i = parseFloat(iStr);
             
-            let diffText = '0';
+            let diffText = '0.00';
             let autoRemark = '';
+            let isMatch = true;
 
             // Special Case: NA
             if (providedVal.toUpperCase() === 'NA' || itoVal.toUpperCase() === 'NA') {
-                diffText = '#VALUE!';
+                diffText = 'N/A';
                 autoRemark = 'N/A';
             } else if (!isNaN(p) && !isNaN(i)) {
                 // Difference: ITO - Provided
                 const diff = i - p;
-                diffText = diff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                diffText = diff.toFixed(2);
                 
                 if (Math.abs(diff) < 0.01) {
                     autoRemark = 'Figure Matching';
+                    isMatch = true;
                 } else {
-                    const absDiff = Math.abs(diff).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                    autoRemark = 'Figure Difference ' + absDiff;
+                    const absDiff = Math.abs(diff).toFixed(2);
+                    autoRemark = 'Difference: ' + absDiff;
+                    isMatch = false;
                 }
             } else if (providedVal === '' && itoVal === '') {
-                 diffText = '0';
+                 diffText = '0.00';
                  autoRemark = '';
             } else {
-                 diffText = '0.00';
+                 diffText = '---';
                  autoRemark = remarkInput.value; 
+            }
+
+            // Update Diff Cell Visuals
+            diffCell.textContent = diffText;
+            if (diffText === 'N/A' || providedVal === '' || itoVal === '') {
+                diffCell.style.color = '#666';
+            } else if (isMatch) {
+                diffCell.style.color = '#198754'; // Success Green
+                if (autoRemark) diffCell.title = autoRemark;
+            } else {
+                diffCell.style.color = '#dc3545'; // Danger Red
+                diffCell.title = autoRemark;
             }
 
             // Sync Remark if it was empty or matches a known auto-pattern
@@ -124,6 +144,7 @@ function initJsonTable(fieldName, config, existingData, prefix = 'json_table_') 
                                currentRemark === 'Matching' || 
                                currentRemark === 'Figure Matching' || 
                                currentRemark === 'Figure Matched' || 
+                               currentRemark.startsWith('Difference:') ||
                                currentRemark.startsWith('Figure Difference') ||
                                currentRemark.startsWith('Diff:') ||
                                (!isNaN(parseFloat(currentRemark.replace(/,/g, ''))) && currentRemark !== '');
