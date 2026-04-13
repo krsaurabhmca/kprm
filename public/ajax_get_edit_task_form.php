@@ -167,13 +167,13 @@ $client_id = $case_data ? $case_data['client_id'] : 0;
                                 <script>
                                     (function() {
                                         const f_id = <?php echo json_encode($field_id); ?>;
-                                        const f_conf = <?php echo !empty($row['default_value']) ? $row['default_value'] : '{}'; ?>;
-                                        const f_dt = <?php echo json_encode($raw_val); ?>;
+                                        const f_conf = <?php echo json_encode(json_decode(htmlspecialchars_decode($row['default_value'] ?? '{}'), true) ?: new stdClass()); ?>;
+                                        const f_dt = <?php echo json_encode(is_array($raw_val) ? $raw_val : json_decode(htmlspecialchars_decode($raw_val ?? ''), true)); ?>;
                                         const initTbl = () => {
                                             if (typeof initJsonTable === "function") {
                                                 // Note: we use a different prefix for modal to avoid ID collisions
                                                 initJsonTable(f_id, f_conf, f_dt, "modal_json_table_");
-                                            } else { setTimeout(initTbl, 150); }
+                                            } else { setTimeout(initTbl, 200); }
                                         };
                                         initTbl();
                                     })();

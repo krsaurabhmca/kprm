@@ -196,14 +196,15 @@ if (!empty($review_remarks)) {
                                             <div class="field-value p-2 bg-light border rounded">
                                                 <?php if($is_json_table): ?>
                                                     <?php 
-                                                        $clean_data = is_array($raw_val) ? $raw_val : json_decode($raw_val, true);
+                                                        $clean_data = is_array($raw_val) ? $raw_val : json_decode(htmlspecialchars_decode($raw_val ?? ''), true);
+                                                        $conf_obj = json_decode(htmlspecialchars_decode($field['default_value'] ?? '{}'), true);
                                                     ?>
                                                     <div id="json_table_container_<?php echo $field_id; ?>"></div>
                                                     <input type="hidden" name="task_meta[<?php echo $f_name; ?>]" id="json_table_input_<?php echo $field_id; ?>" value="">
                                                     <script>
                                                         (function() {
                                                             const fid = <?php echo json_encode($field_id); ?>;
-                                                            const f_conf = <?php echo !empty($field['default_value']) ? $field['default_value'] : '{}'; ?>;
+                                                            const f_conf = <?php echo json_encode($conf_obj ?: new stdClass()); ?>;
                                                             const f_data = <?php echo json_encode($clean_data); ?>;
                                                             
                                                             const runInit = function() {
