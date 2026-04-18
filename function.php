@@ -235,9 +235,17 @@ function render_financial_table_readonly($data)
         foreach ($rows as $r) {
             $provided = $r['provided'] ?? '';
             $ito = $r['ito'] ?? '';
+
+            // SKIP IF BOTH ARE EMPTY OR ZERO
+            $p_chk = floatval(str_replace(',', '', $provided));
+            $i_chk = floatval(str_replace(',', '', $ito));
+            if ((empty($provided) || $p_chk == 0) && (empty($ito) || $i_chk == 0)) {
+                continue;
+            }
+
             $remark_info = get_financial_remark($provided, $ito);
             $row_style = $remark_info['style'] ?? '';
-            
+
             // Calculate Diff for display
             $p = floatval(str_replace(',', '', $provided));
             $i = floatval(str_replace(',', '', $ito));
@@ -249,7 +257,7 @@ function render_financial_table_readonly($data)
             $html .= '<td class="jt-particular">' . htmlspecialchars($r['particular'] ?? '') . '</td>';
             $html .= '<td class="text-end px-2">' . htmlspecialchars($provided) . '</td>';
             $html .= '<td class="text-end px-2">' . htmlspecialchars($ito) . '</td>';
-            
+
             $disp_remark = !empty($r['remark']) ? $r['remark'] : $remark_info['text'];
             $html .= '<td class="px-2">' . htmlspecialchars($disp_remark) . '</td>';
             $html .= '</tr>';
@@ -434,11 +442,17 @@ function build_client_meta_form($client_id, $existing_values = [])
 
         switch ($type) {
             case 'DATE':
+                $value = ($value == "") ? date('Y-m-d') : $value;
                 $html .= "<input type='date' name='client_meta[{$name}]' class='form-control' value='{$value}' {$required}>";
                 break;
 
             case 'NUMBER':
                 $html .= "<input type='number' name='client_meta[{$name}]' class='form-control' value='{$value}' {$required}>";
+                break;
+
+            case 'MONTH':
+                $value = ($value == "") ? date('Y-m') : $value;
+                $html .= "<input type='month' name='client_meta[{$name}]' class='form-control' value='{$value}' {$required}>";
                 break;
 
             case 'SELECT':
@@ -2074,10 +2088,10 @@ function get_financial_remark($provided, $ito)
     $i = floatval(str_replace(',', '', $ito));
 
     if (abs($p - $i) < 0.01) { // Allow for tiny floats
-        return ['text' => 'Figure Matching', 'class' => 'matching', 'style' => 'color:#28a745;'];
+        return ['text' => 'Figure Matching', 'class' => 'matching', 'style' => 'color:#333;'];
     } else {
         $diff = abs($p - $i);
-        return ['text' => 'Figure Difference ' . number_format($diff, 2), 'class' => 'not-matching', 'style' => 'color:#dc3545;font-weight:bold;'];
+        return ['text' => 'Figure Difference ' . number_format($diff, 2), 'class' => 'not-matching', 'style' => 'color:#333;font-weight:bold;'];
     }
 }
 
