@@ -154,3 +154,57 @@ function sendTemplateMessage($phoneNumber, $templateName, $header = [], $fields 
 
     return ["success" => true, "response" => $responseData, "msg_id" => $msg_id];
 }
+
+/**
+ * Sends a notification via Expo Push API for React Native App
+ * 
+ * @param string|array $to Expo Push Token(s) (e.g. "ExponentPushToken[xxx]")
+ * @param string $title Notification title
+ * @param string $body Notification body
+ * @param array $data Custom data (e.g. ['post_id' => 123])
+ * @return array Response from Expo API
+ */
+function sendExpoPushNotification($to, $title, $body, $data = []) {
+    $url = "https://exp.host/--/api/v2/push/send";
+    
+    $messages = [];
+    $recipients = is_array($to) ? $to : [$to];
+    
+    foreach ($recipients as $token) {
+        // Skip invalid tokens
+        if (strpos($token, 'ExponentPushToken') === false) continue;
+
+        $messages[] = [
+            'to' => $token,
+            'title' => $title,
+            'body' => $body,
+            'data' => $data,
+            'sound' => 'default',
+            'channelId' => 'default'
+        ];
+    }
+    
+    if (empty($messages)) {
+        return ["success" => false, "error" => "No valid Expo Push Tokens provided."];
+    }
+
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'accept-encoding: gzip, deflate',
+        'host: exp.host'
+    ]);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($messages));
+    
+    $response = curl_exec($ch);
+    $error = curl_error($ch);
+    curl_close($ch);
+    
+    if ($error) {
+        return ["success" => false, "error" => $error];
+    }
+    
+    return json_decode($response, true);
+}

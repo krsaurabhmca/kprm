@@ -44,6 +44,17 @@ if (!empty($case['case_info'])) {
     }
 }
 
+// Get creator name
+$creator_name = 'N/A';
+if (!empty($case['created_by'])) {
+    $user_res = get_data('op_user', $case['created_by']);
+    if ($user_res['count'] > 0) {
+        $creator_name = $user_res['data']['user_name'] ?? 'N/A';
+    }
+}
+$input_user = $case_info_data['user_name'] ?? $creator_name;
+$app_id_display = $case_info_data['app_id'] ?? $case_info_data['application_id'] ?? $case['application_no'] ?? 'N/A';
+
 // Get all tasks for this case
 global $con;
 $table_exists = false;
@@ -194,9 +205,8 @@ if (isset($_SESSION['error_message'])) {
             </h4>
             <p class="text-muted small mb-0">
                 <i class="fas fa-building me-1"></i><?php echo htmlspecialchars($client_name); ?>
-                <?php if (!empty($case['application_no'])): ?>
-                    <span class="ms-3"><i class="fas fa-hashtag me-1"></i><?php echo htmlspecialchars($case['application_no']); ?></span>
-                <?php endif; ?>
+                <span class="ms-3"><i class="fas fa-hashtag me-1"></i>App ID: <?php echo htmlspecialchars($app_id_display); ?></span>
+                <span class="ms-3"><i class="fas fa-user-edit me-1"></i>User: <?php echo htmlspecialchars($input_user); ?></span>
             </p>
         </div>
         <div class="d-flex gap-2">
@@ -334,12 +344,14 @@ if (isset($_SESSION['error_message'])) {
                         <div class="text-muted small mb-1">Case ID</div>
                         <div class="fw-bold">#<?php echo $case_id; ?></div>
                     </div>
-                    <?php if (!empty($case['application_no'])): ?>
                     <div class="mb-3">
-                        <div class="text-muted small mb-1">Application Number</div>
-                        <div class="fw-bold text-primary"><?php echo htmlspecialchars($case['application_no']); ?></div>
+                        <div class="text-muted small mb-1">App ID / Application Number</div>
+                        <div class="fw-bold text-primary"><?php echo htmlspecialchars($app_id_display); ?></div>
                     </div>
-                    <?php endif; ?>
+                    <div class="mb-3">
+                        <div class="text-muted small mb-1">Input User</div>
+                        <div class="fw-bold"><?php echo htmlspecialchars($input_user); ?></div>
+                    </div>
                     <div class="mb-3">
                         <div class="text-muted small mb-1">Case Status</div>
                         <div>

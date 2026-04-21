@@ -1,10 +1,10 @@
-<?php 
+<?php
 /**
  * KPRM - Case Management
  * List and manage all cases
  */
 
-require_once("../system/all_header.php"); 
+require_once("../system/all_header.php");
 
 $table_name = "cases";
 global $con;
@@ -17,10 +17,10 @@ $has_case_tasks = false;
 try {
     $check_cols = mysqli_query($con, "SHOW COLUMNS FROM cases LIKE 'case_info'");
     $has_case_info = ($check_cols && mysqli_num_rows($check_cols) > 0);
-    
+
     $check_cols2 = mysqli_query($con, "SHOW COLUMNS FROM cases LIKE 'case_status'");
     $has_case_status = ($check_cols2 && mysqli_num_rows($check_cols2) > 0);
-    
+
     $check_table = mysqli_query($con, "SHOW TABLES LIKE 'case_tasks'");
     $has_case_tasks = ($check_table && mysqli_num_rows($check_table) > 0);
 } catch (Exception $e) {
@@ -31,9 +31,10 @@ try {
 if ($has_case_status) {
     $stats_sql = "SELECT 
         COUNT(*) as total,
-        SUM(CASE WHEN case_status = 'PENDING' THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN case_status = 'PENDING' OR case_status = 'ACTIVE' THEN 1 ELSE 0 END) as pending,
         SUM(CASE WHEN case_status = 'IN_PROGRESS' THEN 1 ELSE 0 END) as in_progress,
-        SUM(CASE WHEN case_status = 'CLOSED' THEN 1 ELSE 0 END) as closed
+        SUM(CASE WHEN case_status = 'CLOSED' OR case_status = 'COMPLETED' THEN 1 ELSE 0 END) as closed,
+        SUM(CASE WHEN case_status = 'ON_HOLD' THEN 1 ELSE 0 END) as on_hold
         FROM cases WHERE status != 'DELETED'";
 } else {
     // If case_status column doesn't exist, calculate from tasks
@@ -41,44 +42,46 @@ if ($has_case_status) {
         // Calculate case status from tasks
         // Logic: PENDING if all tasks are PENDING, COMPLETED if all tasks are COMPLETED (Reviewed), else IN_PROGRESS
         $stats_sql = "SELECT 
-            COUNT(DISTINCT c.id) as total,
-            SUM(CASE WHEN calc_status = 'PENDING' THEN 1 ELSE 0 END) as pending,
-            SUM(CASE WHEN calc_status = 'IN_PROGRESS' THEN 1 ELSE 0 END) as in_progress,
-            SUM(CASE WHEN calc_status = 'COMPLETED' THEN 1 ELSE 0 END) as closed
-            FROM (
-                SELECT c.id,
-                    CASE 
-                        WHEN COUNT(ct.id) = 0 THEN 'PENDING'
-                        WHEN SUM(CASE WHEN ct.task_status = 'PENDING' THEN 1 ELSE 0 END) = COUNT(ct.id) THEN 'PENDING'
-                        WHEN SUM(CASE WHEN ct.task_status = 'COMPLETED' THEN 1 ELSE 0 END) = COUNT(ct.id) THEN 'COMPLETED'
-                        ELSE 'IN_PROGRESS'
-                    END as calc_status
-                FROM cases c
-                LEFT JOIN case_tasks ct ON c.id = ct.case_id AND ct.status = 'ACTIVE'
-                WHERE c.status != 'DELETED'
-                GROUP BY c.id
-            ) as calc
-            CROSS JOIN cases c ON calc.id = c.id
-            GROUP BY 1";
+                COUNT(DISTINCT c.id) as total,
+                SUM(CASE WHEN calc_status = 'PENDING' THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN calc_status = 'IN_PROGRESS' THEN 1 ELSE 0 END) as in_progress,
+                SUM(CASE WHEN calc_status = 'COMPLETED' THEN 1 ELSE 0 END) as closed,
+                SUM(CASE WHEN calc_status = 'ON_HOLD' THEN 1 ELSE 0 END) as on_hold
+                FROM (
+                    SELECT c.id,
+                        CASE 
+                            WHEN c.case_status = 'ON_HOLD' THEN 'ON_HOLD'
+                            WHEN COUNT(ct.id) = 0 THEN 'PENDING'
+                            WHEN SUM(CASE WHEN ct.task_status = 'PENDING' THEN 1 ELSE 0 END) = COUNT(ct.id) THEN 'PENDING'
+                            WHEN SUM(CASE WHEN ct.task_status = 'COMPLETED' THEN 1 ELSE 0 END) = COUNT(ct.id) THEN 'COMPLETED'
+                            ELSE 'IN_PROGRESS'
+                        END as calc_status
+                    FROM cases c
+                    LEFT JOIN case_tasks ct ON c.id = ct.case_id AND ct.status = 'ACTIVE'
+                    WHERE c.status != 'DELETED'
+                    GROUP BY c.id
+                ) as calc";
     } else {
         // Fallback: count all as pending
         $stats_sql = "SELECT 
-            COUNT(*) as total,
-            COUNT(*) as pending,
-            0 as in_progress,
-            0 as closed
-            FROM cases WHERE status != 'DELETED'";
+                COUNT(*) as total,
+                COUNT(*) as pending,
+                0 as in_progress,
+                0 as closed,
+                0 as on_hold
+                FROM cases WHERE status != 'DELETED'";
     }
 }
 $stats_res = mysqli_query($con, $stats_sql);
-$stats = ['total' => 0, 'pending' => 0, 'in_progress' => 0, 'closed' => 0];
+$stats = ['total' => 0, 'pending' => 0, 'in_progress' => 0, 'closed' => 0, 'on_hold' => 0];
 if ($stats_res) {
     $stats_row = mysqli_fetch_assoc($stats_res);
     $stats = [
-        'total' => (int)$stats_row['total'],
-        'pending' => (int)($stats_row['pending'] ?? 0),
-        'in_progress' => (int)($stats_row['in_progress'] ?? 0),
-        'closed' => (int)($stats_row['closed'] ?? 0)
+        'total' => (int) $stats_row['total'],
+        'pending' => (int) ($stats_row['pending'] ?? 0),
+        'in_progress' => (int) ($stats_row['in_progress'] ?? 0),
+        'closed' => (int) ($stats_row['closed'] ?? 0),
+        'on_hold' => (int) ($stats_row['on_hold'] ?? 0)
     ];
 }
 
@@ -103,9 +106,11 @@ $sql = "
         {$case_status_col},
         cl.name as client_name,
         '' as client_code,
+        u.user_name as creator_name,
         {$task_count_col}
     FROM cases c
     LEFT JOIN clients cl ON c.client_id = cl.id
+    LEFT JOIN op_user u ON c.created_by = u.id
     {$case_tasks_join}
     WHERE c.status != 'DELETED'
     {$group_by}
@@ -270,11 +275,11 @@ if (isset($res['status']) && $res['status'] == 'error' && $case_count > 0) {
                             <div class="flex-grow-1">
                                 <div class="text-muted small mb-1">Total Tasks</div>
                                 <div class="h5 mb-0 fw-bold text-primary">
-                                    <?php 
+                                    <?php
                                     if ($has_case_tasks) {
                                         $total_tasks_sql = "SELECT COUNT(*) as total FROM case_tasks WHERE status = 'ACTIVE'";
                                         $total_tasks_res = mysqli_query($con, $total_tasks_sql);
-                                        echo $total_tasks_res ? (int)mysqli_fetch_assoc($total_tasks_res)['total'] : '0';
+                                        echo $total_tasks_res ? (int) mysqli_fetch_assoc($total_tasks_res)['total'] : '0';
                                     } else {
                                         echo '0';
                                     }
@@ -298,252 +303,232 @@ if (isset($res['status']) && $res['status'] == 'error' && $case_count > 0) {
                         <i class="fas fa-list me-2 text-primary"></i> All Cases
                         <span class="badge bg-secondary ms-2"><?php echo $case_count; ?></span>
                     </h6>
-                    <div class="d-flex gap-2">
+                    <div class="d-flex align-items-center gap-3">
+                        <!-- Custom Search Bar -->
+                        <div class="input-group input-group-sm shadow-sm" style="width: 300px;">
+                            <span class="input-group-text bg-light border-end-0"><i
+                                    class="fas fa-search text-muted"></i></span>
+                            <input type="text" id="customSearch" class="form-control border-start-0"
+                                placeholder="Search ID, Customer, App ID, Info...">
+                        </div>
                         <button class="btn btn-sm btn-outline-warning" title="Select All">
                             <input type="checkbox" id="selectAll" class="form-check-input me-1">
                             <small>Select All</small>
                         </button>
                         <?php echo btn_delete_multiple($table_name); ?>
-                        <!-- <button class="btn btn-sm btn-outline-primary" title="Show/Hide Columns" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasRight">
-                            <i class="fas fa-columns"></i>
-                        </button> -->
                     </div>
                 </div>
             </div>
             <div class="card-body p-0">
                 <?php if ($case_count > 0 && !empty($case_data)): ?>
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0" id="casesTable">
-                        <thead class="table-light">
-                            <tr>
-                                <th width="50" class="text-center">
-                                    <input type="checkbox" id="selectAllTable" title="Select All">
-                                </th>
-                                <th>ID</th>
-                                <th>Application No</th>
-                                <th>Client</th>
-                                <th>Case Status</th>
-                                <th>Key Information</th>
-                                <th class="text-center">Tasks</th>
-                                <th>Created</th>
-                                <th width="180" class="text-center">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($case_data as $row): 
-                                $case_id = $row['id'];
-                                $client_id = $row['client_id'];
-                            ?>
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0" id="casesTable">
+                            <thead class="table-light">
                                 <tr>
-                                    <td class="text-center">
-                                        <input type="checkbox" class="chk" name="ids[]" value="<?php echo $case_id; ?>">
-                                    </td>
-                                    <td>
-                                        <span class="fw-bold text-muted">#<?php echo $case_id; ?></span>
-                                    </td>
-                                    <td>
-                                        <strong class="text-primary"><?php echo htmlspecialchars($row['application_no'] ?: 'N/A'); ?></strong>
-                                    </td>
-                                    <td>
-                                        <div class="d-flex align-items-center">
-                                            <div class="me-2">
-                                                <i class="fas fa-user-circle text-muted"></i>
-                                            </div>
-                                            <div>
-                                                <div class="fw-bold"><?php echo htmlspecialchars($row['client_name'] ?: 'Unknown Client'); ?></div>
-                                                <?php if ($row['client_code']): ?>
-                                                    <small class="text-muted"><?php echo htmlspecialchars($row['client_code']); ?></small>
-                                                <?php endif; ?>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <?php 
-                                        $case_status = $row['case_status'] ?? 'PENDING';
-                                        
-                                        // If case_status column doesn't exist, calculate from tasks
-                                        if (!$has_case_status && $has_case_tasks) {
-                                            $case_id = $row['id'];
-                                            $case_tasks_result = get_all('case_tasks', 'task_status, task_data', ['case_id' => $case_id, 'status' => 'ACTIVE']);
-                                            $case_tasks = [];
-                                            if ($case_tasks_result['count'] > 0) {
-                                                foreach ($case_tasks_result['data'] as $t) {
-                                                    $case_tasks[] = [
-                                                        'db_status' => $t['task_status'] ?? 'PENDING',
-                                                        'task_data' => $t['task_data'] ?? null
-                                                    ];
-                                                }
-                                            }
-                                            $case_status = calculate_case_status($case_tasks);
-                                        }
-                                        
-                                        $status_config = [
-                                            'PENDING' => ['color' => 'warning', 'icon' => 'clock'],
-                                            'IN_PROGRESS' => ['color' => 'info', 'icon' => 'spinner'],
-                                            'COMPLETED' => ['color' => 'success', 'icon' => 'check-circle']
-                                        ];
-                                        $status_info = $status_config[$case_status] ?? ['color' => 'secondary', 'icon' => 'circle'];
-                                        ?>
-                                        <span class="badge bg-<?php echo $status_info['color']; ?>">
-                                            <i class="fas fa-<?php echo $status_info['icon']; ?> me-1"></i>
-                                            <?php echo htmlspecialchars($case_status); ?>
-                                        </span>
-                                    </td>
-                                    <td>
+                                    <th width="50" class="text-center">
+                                        <input type="checkbox" id="selectAllTable" title="Select All">
+                                    </th>
+                                    <th>ID</th>
+                                    <th>Customer</th>
+                                    <th>App ID</th>
+                                    <th>Key Information</th>
+                                    <th class="text-center">Tasks</th>
+                                    <th>Created</th>
+                                    <th width="180" class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($case_data as $row):
+                                    $case_id = $row['id'];
+                                    $client_id = $row['client_id'];
+                                    ?>
+                                    <tr>
+                                        <td class="text-center">
+                                            <input type="checkbox" class="chk" name="ids[]" value="<?php echo $case_id; ?>">
+                                        </td>
+                                        <td>
+                                            <span class="fw-bold text-muted">#<?php echo $case_id; ?></span>
+                                        </td>
                                         <?php
-                                        if (!empty($row['case_info'])) {
-                                            $case_info = json_decode($row['case_info'], true);
-                                            if (is_array($case_info) && !empty($case_info)) {
-                                                // Get important fields (region, branch, product, etc.)
-                                                $key_fields = ['region', 'branch', 'product', 'state', 'location'];
-                                                $display_items = [];
-                                                foreach ($key_fields as $field) {
-                                                    if (isset($case_info[$field]) && !empty($case_info[$field])) {
-                                                        $display_items[] = '<span class="badge bg-light text-dark me-1"><small>' . htmlspecialchars(ucfirst($field)) . ': ' . htmlspecialchars(substr($case_info[$field], 0, 20)) . '</small></span>';
-                                                        if (count($display_items) >= 2) break;
-                                                    }
-                                                }
-                                                if (empty($display_items)) {
-                                                    // Fallback: show first 2 non-empty values
-                                                    $count = 0;
-                                                    foreach ($case_info as $key => $val) {
-                                                        if (!empty($val) && $count < 2) {
-                                                            $display_items[] = '<span class="badge bg-light text-dark me-1"><small>' . htmlspecialchars(ucfirst($key)) . ': ' . htmlspecialchars(substr($val, 0, 20)) . '</small></span>';
-                                                            $count++;
+                                        $case_info = json_decode($row['case_info'] ?? '{}', true);
+                                        $customer_name = $case_info['customer_name'] ?? 'N/A';
+                                        $app_id = $case_info['app_id'] ?? $case_info['application_id'] ?? $row['application_no'] ?: 'N/A';
+                                        ?>
+                                        <td data-search="<?php echo htmlspecialchars($customer_name); ?>">
+                                            <div class="fw-bold text-dark"><?php echo htmlspecialchars($customer_name); ?></div>
+                                        </td>
+                                        <td data-search="<?php echo htmlspecialchars($app_id); ?>">
+                                            <strong class="text-primary"><?php echo htmlspecialchars($app_id); ?></strong>
+                                        </td>
+                                        <td>
+                                            <?php
+                                            if (!empty($row['case_info'])) {
+                                                $case_info = json_decode($row['case_info'], true);
+                                                if (is_array($case_info) && !empty($case_info)) {
+                                                    // Get important fields (region, branch, product, etc.)
+                                                    $key_fields = ['region', 'branch', 'product', 'state', 'location'];
+                                                    $display_items = [];
+                                                    foreach ($key_fields as $field) {
+                                                        if (isset($case_info[$field]) && !empty($case_info[$field])) {
+                                                            $display_items[] = '<span class="badge bg-light text-dark me-1"><small>' . htmlspecialchars(ucfirst($field)) . ': ' . htmlspecialchars(substr($case_info[$field], 0, 20)) . '</small></span>';
+                                                            if (count($display_items) >= 2)
+                                                                break;
                                                         }
                                                     }
+                                                    if (empty($display_items)) {
+                                                        // Fallback: show first 2 non-empty values
+                                                        $count = 0;
+                                                        foreach ($case_info as $key => $val) {
+                                                            if (!empty($val) && $count < 2) {
+                                                                $display_items[] = '<span class="badge bg-light text-dark me-1"><small>' . htmlspecialchars(ucfirst($key)) . ': ' . htmlspecialchars(substr($val, 0, 20)) . '</small></span>';
+                                                                $count++;
+                                                            }
+                                                        }
+                                                    }
+                                                    echo !empty($display_items) ? implode('', $display_items) : '<span class="text-muted small">Details available</span>';
+                                                } else {
+                                                    echo '<span class="text-muted small">No info</span>';
                                                 }
-                                                echo !empty($display_items) ? implode('', $display_items) : '<span class="text-muted small">Details available</span>';
                                             } else {
                                                 echo '<span class="text-muted small">No info</span>';
                                             }
-                                        } else {
-                                            echo '<span class="text-muted small">No info</span>';
-                                        }
-                                        ?>
-                                    </td>
-                                    <td class="text-center">
-                                        <?php 
-                                        $task_count = (int)($row['task_count'] ?? 0);
-                                        $task_badge_class = $task_count > 0 ? 'bg-primary' : 'bg-secondary';
-                                        ?>
-                                        <span class="badge <?php echo $task_badge_class; ?>">
-                                            <i class="fas fa-tasks me-1"></i><?php echo $task_count; ?>
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <small class="text-muted">
-                                            <?php 
-                                            if (!empty($row['created_at'])) {
-                                                $created = new DateTime($row['created_at']);
-                                                $now = new DateTime();
-                                                $diff = $now->diff($created);
-                                                
-                                                if ($diff->days == 0) {
-                                                    echo 'Today, ' . $created->format('h:i A');
-                                                } elseif ($diff->days == 1) {
-                                                    echo 'Yesterday, ' . $created->format('h:i A');
-                                                } elseif ($diff->days < 7) {
-                                                    echo $diff->days . ' days ago';
-                                                } else {
-                                                    echo $created->format('d M Y');
-                                                }
-                                            } else {
-                                                echo 'N/A';
-                                            }
                                             ?>
-                                        </small>
-                                    </td>
-                                    <td>
-                                        <div class="d-flex gap-1 justify-content-center">
-                                            <a href="view_case.php?case_id=<?php echo $case_id; ?>" class="btn btn-sm btn-info" title="View Case">
-                                                <i class="fas fa-eye"></i>
-                                            </a>
-                                            <a href="add_new_case.php?step=2&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>" class="btn btn-sm btn-warning" title="Edit Case Info">
-                                                <i class="fas fa-edit"></i>
-                                            </a>
-                                            <a href="add_new_case.php?step=3&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>" class="btn btn-sm btn-primary" title="Manage Tasks">
-                                                <i class="fas fa-tasks"></i>
-                                            </a>
-                                            <!-- <button type="button" class="btn btn-sm btn-danger" onclick="deleteCase(<?php echo $case_id; ?>)" title="Delete Case">
+                                        </td>
+                                        <td class="text-center">
+                                            <?php
+                                            $task_count = (int) ($row['task_count'] ?? 0);
+                                            $task_badge_class = $task_count > 0 ? 'bg-primary' : 'bg-secondary';
+                                            ?>
+                                            <span class="badge <?php echo $task_badge_class; ?>">
+                                                <i class="fas fa-tasks me-1"></i><?php echo $task_count; ?>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <small class="text-muted">
+                                                <?php
+                                                if (!empty($row['created_at'])) {
+                                                    $created = new DateTime($row['created_at']);
+                                                    $now = new DateTime();
+                                                    $diff = $now->diff($created);
+
+                                                    if ($diff->days == 0) {
+                                                        echo 'Today, ' . $created->format('h:i A');
+                                                    } elseif ($diff->days == 1) {
+                                                        echo 'Yesterday, ' . $created->format('h:i A');
+                                                    } elseif ($diff->days < 7) {
+                                                        echo $diff->days . ' days ago';
+                                                    } else {
+                                                        echo $created->format('d M Y');
+                                                    }
+                                                } else {
+                                                    echo 'N/A';
+                                                }
+                                                ?>
+                                            </small>
+                                        </td>
+                                        <td>
+                                            <div class="d-flex gap-1 justify-content-center">
+                                                <a href="view_case.php?case_id=<?php echo $case_id; ?>"
+                                                    class="btn btn-sm btn-info" title="View Case">
+                                                    <i class="fas fa-eye"></i>
+                                                </a>
+                                                <a href="add_new_case.php?step=2&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>"
+                                                    class="btn btn-sm btn-warning" title="Edit Case Info">
+                                                    <i class="fas fa-edit"></i>
+                                                </a>
+                                                <a href="add_new_case.php?step=3&case_id=<?php echo $case_id; ?>&client_id=<?php echo $client_id; ?>"
+                                                    class="btn btn-sm btn-primary" title="Manage Tasks">
+                                                    <i class="fas fa-tasks"></i>
+                                                </a>
+                                                <!-- <button type="button" class="btn btn-sm btn-danger" onclick="deleteCase(<?php echo $case_id; ?>)" title="Delete Case">
                                                 <i class="fas fa-trash"></i>
                                             </button> -->
-                                        </div>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-                <?php else: ?>
-                <div class="text-center py-5">
-                    <div class="mb-3">
-                        <i class="fas fa-folder-open fa-4x text-muted opacity-50"></i>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     </div>
-                    <h5 class="text-muted mb-2">No Cases Found</h5>
-                    <p class="text-muted small mb-4">Get started by creating your first case</p>
-                    <a href="add_new_case.php" class="btn btn-primary">
-                        <i class="fas fa-plus me-2"></i> Create Your First Case
-                    </a>
-                </div>
+                <?php else: ?>
+                    <div class="text-center py-5">
+                        <div class="mb-3">
+                            <i class="fas fa-folder-open fa-4x text-muted opacity-50"></i>
+                        </div>
+                        <h5 class="text-muted mb-2">No Cases Found</h5>
+                        <p class="text-muted small mb-4">Get started by creating your first case</p>
+                        <a href="add_new_case.php" class="btn btn-primary">
+                            <i class="fas fa-plus me-2"></i> Create Your First Case
+                        </a>
+                    </div>
                 <?php endif; ?>
             </div>
         </div>
     </div>
 </main>
 
-<script>
-$(document).ready(function() {
-    // Select all checkbox
-    $("#selectAll, #selectAllTable").change(function() {
-        $(".chk").prop("checked", $(this).prop('checked'));
-    });
-    
-    // Initialize DataTable if available
-    if ($.fn.DataTable) {
-        $('#casesTable').DataTable({
-            "pageLength": 25,
-            "order": [[7, "desc"]], // Sort by Created At descending
-            "columnDefs": [
-                { "orderable": false, "targets": [0, 8] }, // Disable sorting on checkbox and actions columns
-                { "type": "num", "targets": [1] } // ID column
-            ],
-            "language": {
-                "search": "Search cases:",
-                "lengthMenu": "Show _MENU_ cases per page",
-                "info": "Showing _START_ to _END_ of _TOTAL_ cases",
-                "infoEmpty": "No cases to show",
-                "infoFiltered": "(filtered from _MAX_ total cases)"
-            }
-        });
-    }
-});
-
-function deleteCase(caseId) {
-    if (confirm('Are you sure you want to delete this case? This action cannot be undone.')) {
-        $.ajax({
-            url: 'save_case_step.php',
-            type: 'POST',
-            data: {
-                action: 'delete_case',
-                case_id: caseId
-            },
-            dataType: 'json',
-            success: function(response) {
-                if (response.success) {
-                    location.reload();
-                } else {
-                    alert('Error: ' + (response.message || 'Failed to delete case'));
-                }
-            },
-            error: function() {
-                alert('Error deleting case. Please try again.');
-            }
-        });
-    }
-}
-</script>
-
-<?php 
-require_once("../system/footer.php"); 
+<?php
+require_once("../system/footer.php");
 ?>
+
+<script>
+    $(document).ready(function () {
+        // Select all checkbox
+        $("#selectAll, #selectAllTable").change(function () {
+            $(".chk").prop("checked", $(this).prop('checked'));
+        });
+
+        // Initialize DataTable if available
+        if ($.fn.DataTable) {
+            var table = $('#casesTable').DataTable({
+                "pageLength": 25,
+                "order": [[6, "desc"]], // Sort by Created At descending
+                "columnDefs": [
+                    { "orderable": false, "targets": [0, 7] }, // Disable sorting on checkbox and actions columns
+                    { "type": "num", "targets": [1] } // ID column
+                ],
+                "dom": "lrtip", // Use standard layout without default search box
+                "language": {
+                    "lengthMenu": "Show _MENU_ cases per page",
+                    "info": "Showing _START_ to _END_ of _TOTAL_ cases",
+                    "infoEmpty": "No cases to show",
+                    "infoFiltered": "(filtered from _MAX_ total cases)"
+                }
+            });
+
+            // Link custom search input with debounce and broad event support
+            var searchTimer;
+            $('#customSearch').on('input paste propertychange keyup', function () {
+                var val = $(this).val();
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(function () {
+                    table.search(val).draw();
+                }, 50);
+            });
+        }
+    });
+
+    function deleteCase(caseId) {
+        if (confirm('Are you sure you want to delete this case? This action cannot be undone.')) {
+            $.ajax({
+                url: 'save_case_step.php',
+                type: 'POST',
+                data: {
+                    action: 'delete_case',
+                    case_id: caseId
+                },
+                dataType: 'json',
+                success: function (response) {
+                    if (response.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + (response.message || 'Failed to delete case'));
+                    }
+                },
+                error: function () {
+                    alert('Error deleting case. Please try again.');
+                }
+            });
+        }
+    }
+</script>
