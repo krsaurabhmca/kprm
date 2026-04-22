@@ -445,9 +445,14 @@ if ($export_excel && $selected_client_id > 0) {
                     </select>
                 </form>
                 <?php if ($selected_client_id > 0): ?>
-                    <a href="?client_id=<?php echo $selected_client_id; ?>&month=<?php echo $selected_month; ?>&year=<?php echo $selected_year; ?>&export=excel" class="btn btn-sm btn-success">
-                        <i class="fas fa-file-excel me-1"></i>Export to Excel
-                    </a>
+                    <div class="btn-group">
+                        <a href="?client_id=<?php echo $selected_client_id; ?>&month=<?php echo $selected_month; ?>&year=<?php echo $selected_year; ?>&export=excel" class="btn btn-sm btn-success" title="Download Dashboard Analytics">
+                            <i class="fas fa-file-excel me-1"></i> Dashboard MIS
+                        </a>
+                        <a href="mis_export.php?client_id=<?php echo $selected_client_id; ?>&date_from=<?php echo $month_start; ?>&date_to=<?php echo $month_end; ?>" class="btn btn-sm btn-dark" target="_blank" title="Download Detailed Case-wise MIS">
+                            <i class="fas fa-list-alt me-1"></i> Case-wise MIS
+                        </a>
+                    </div>
                 <?php endif; ?>
             </div>
         </div>

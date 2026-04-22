@@ -2276,6 +2276,12 @@ function btn_edit($table_name, $id, $page_url='add', $btn = 'btn-info', $icon = 
 	}
 	return $str;
 }
+function btn_mis_export($table, $id, $extra = "")
+{
+    $str = "<a href='mis_export.php?client_id=$id' class='btn btn-dark btn-sm' target='_blank' title='Download Client MIS Report'> <i class='fas fa-file-excel'></i> MIS </a> ";
+    return $str;
+}
+
 function btn_add($table_name)
 {
 	global $user_type;

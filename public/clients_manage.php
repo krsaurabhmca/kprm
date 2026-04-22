@@ -34,6 +34,7 @@
 							$btn_arr =[
 							    'btn_view'=>'',
 							    'btn_edit'=>'clients_add',
+							    'btn_mis_export' => '',
 							    'btn_meta'=> 'add_structure',
 							    'btn_stucture'=> 'clients_meta_manage'
 							 ];

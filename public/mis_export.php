@@ -15,7 +15,11 @@ try {
     require_once('../function.php');
     require_once('../system/vendor/autoload.php');
 
-    // Default date range if not provided
+    // Get filter parameters
+    $f_case_id = isset($_GET['case_id']) ? intval($_GET['case_id']) : 0;
+    $f_client_id = isset($_GET['client_id']) ? intval($_GET['client_id']) : 0;
+    
+    // Default date range
     $date_from = isset($_GET['date_from']) ? mysqli_real_escape_string($con, $_GET['date_from']) : date('Y-m-d', strtotime('-30 days'));
     $date_to = isset($_GET['date_to']) ? mysqli_real_escape_string($con, $_GET['date_to']) : date('Y-m-d');
 
@@ -23,11 +27,6 @@ try {
         ob_end_clean();
         die("PhpSpreadsheet library not found. Please run 'composer install'.");
     }
-
-    $date_from = isset($_GET['date_from']) ? $_GET['date_from'] : date('Y-m-d', strtotime('-30 days'));
-    $date_to = isset($_GET['date_to']) ? $_GET['date_to'] : date('Y-m-d');
-    $f_client_id = isset($_GET['client_id']) ? intval($_GET['client_id']) : 0;
-    $f_case_id = isset($_GET['case_id']) ? intval($_GET['case_id']) : 0;
 
     // Build SQL query for cases
     $where = "c.status != 'DELETED'";
@@ -171,6 +170,25 @@ try {
             if (!empty($t_data['review_remarks'])) {
                 $remarks_list[] = $remark_sr . ". " . $t_name . " - " . $t_data['review_remarks'];
                 $remark_sr++;
+            } else {
+                // Show ONLY initial task data entered during initiation (e.g. Name, PAN for ITR)
+                $task_summary = [];
+                $ignore_keys = [
+                    'review_status', 'review_remarks', 'extra_checks', 'action', 'task_id', 
+                    'case_id', 'client_id', 'status', 'id', 'created_at', 'updated_at',
+                    'step', 'ajax', 'assigned_to', 'verified_at', 'reviewed_at', 'process_status',
+                    'verifier_remarks', 'verification_status', 'verified_by'
+                ];
+                foreach ($t_data as $k => $v) {
+                    if (!in_array($k, $ignore_keys) && !empty($v) && !is_array($v)) {
+                        $label = ucwords(str_replace(['_', '-'], ' ', $k));
+                        $task_summary[] = "$label: $v";
+                    }
+                }
+                if (!empty($task_summary)) {
+                    $remarks_list[] = $remark_sr . ". " . $t_name . " - " . implode(' | ', $task_summary);
+                    $remark_sr++;
+                }
             }
             
             if ($task['agency_name']) $agencies[] = $task['agency_name'];

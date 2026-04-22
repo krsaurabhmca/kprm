@@ -211,6 +211,25 @@ $total_records = count($cases_data);
                                         if (!empty($t_data['review_remarks'])) {
                                             $remarks_list[] = $remark_sr . ". " . $t_name . " - " . $t_data['review_remarks'];
                                             $remark_sr++;
+                                        } else {
+                                            // Show ONLY initial task data entered during initiation (e.g. Name, PAN for ITR)
+                                            $task_summary = [];
+                                            $ignore_keys = [
+                                                'review_status', 'review_remarks', 'extra_checks', 'action', 'task_id', 
+                                                'case_id', 'client_id', 'status', 'id', 'created_at', 'updated_at',
+                                                'step', 'ajax', 'assigned_to', 'verified_at', 'reviewed_at', 'process_status',
+                                                'verifier_remarks', 'verification_status', 'verified_by'
+                                            ];
+                                            foreach ($t_data as $k => $v) {
+                                                if (!in_array($k, $ignore_keys) && !empty($v) && !is_array($v)) {
+                                                    $label = ucwords(str_replace(['_', '-'], ' ', $k));
+                                                    $task_summary[] = "$label: $v";
+                                                }
+                                            }
+                                            if (!empty($task_summary)) {
+                                                $remarks_list[] = $remark_sr . ". " . $t_name . " - " . implode(' | ', $task_summary);
+                                                $remark_sr++;
+                                            }
                                         }
 
                                         if ($task['agency_name'])
